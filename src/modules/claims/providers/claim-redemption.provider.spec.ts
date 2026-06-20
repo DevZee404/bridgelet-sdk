@@ -34,7 +34,7 @@ describe('ClaimRedemptionProvider', () => {
 
   // A valid 56-character Stellar address starting with 'G'
   const VALID_DESTINATION =
-    'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA';
+    'GBULQKZ7SA56UKRI6LX2IB6XH3GJW2L34BMTOWMQFJBAQNPSHJJNOTGN';
   const VALID_TOKEN = 'valid.jwt.token';
 
   // secretKeyEncrypted is base64-encoded so that decryptSecret() returns 'test-secret'

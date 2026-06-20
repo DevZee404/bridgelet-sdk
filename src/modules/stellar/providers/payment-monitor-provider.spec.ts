@@ -38,7 +38,7 @@ const makePaymentRecord = (overrides: Partial<any> = {}) => ({
   amount: '100.0000000',
   asset_type: 'credit_alphanum4',
   asset_code: 'USDC',
-  asset_issuer: 'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
+  asset_issuer: 'GBULQKZ7SA56UKRI6LX2IB6XH3GJW2L34BMTOWMQFJBAQNPSHJJNOTGN',
   ...overrides,
 });
 

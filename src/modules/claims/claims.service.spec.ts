@@ -33,7 +33,7 @@ describe('ClaimsService Integration Tests', () => {
   const mockClaimId = 'claim-id-123';
   const mockToken = 'valid.jwt.token';
   const mockDestinationAddress =
-    'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+    'GBULQKZ7SA56UKRI6LX2IB6XH3GJW2L34BMTOWMQFJBAQNPSHJJNOTGN';
 
   const mockClaimDetails: ClaimDetailsDto = {
     id: mockClaimId,

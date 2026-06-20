@@ -34,7 +34,7 @@ The following services/imports are currently **commented out** to allow `npm run
 
 ### How to Find Temporary Changes:
 
-1. Search the codebase for comments containing `TEMPORARY:` to locate all commented-out code that needs restoration.
+1. Search the codebase for comments containing `TEMPORARY:` to locate all commented-out code that needs restoration..
 
 2. **Secret Encryption** (`src/modules/accounts/accounts.service.ts`)
    - **Current:** Base64 encoding (NOT encryption)

@@ -16,6 +16,7 @@ import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
 import { SecretEncryptionUtil } from '../../../common/crypto/secret-encryption.util.js';
 import { ConfigService } from '@nestjs/config';
 import { TransactionHashValidator } from '../../../common/validators/transaction-hash.validator.js';
+import { StellarAddressValidator } from '../../../common/validators/stellar-address.validator.js';
 
 @Injectable()
 export class ClaimRedemptionProvider {
@@ -71,7 +72,7 @@ export class ClaimRedemptionProvider {
     }
 
     // Validate destination address
-    this.validateStellarAddress(destinationAddress);
+    StellarAddressValidator.assertValid(destinationAddress);
 
     // Get account
     const account = await this.accountsRepository.findOne({
@@ -190,13 +191,6 @@ export class ClaimRedemptionProvider {
       // });
 
       throw error;
-    }
-  }
-
-  private validateStellarAddress(address: string): void {
-    // Stellar public keys start with 'G' and are 56 characters
-    if (!address.startsWith('G') || address.length !== 56) {
-      throw new BadRequestException('Invalid Stellar address format');
     }
   }
 
