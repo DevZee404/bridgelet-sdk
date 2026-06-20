@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { StellarService } from '../stellar/stellar.service.js';
 import { Account } from '../accounts/entities/account.entity.js';
 import { AccountStatus } from '../accounts/enums/account-status.enum.js';
+import { WebhooksService } from '../webhooks/webhooks.service.js';
 
 @Injectable()
 export class SchedulerService implements OnModuleInit, OnModuleDestroy {
@@ -22,6 +23,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly accountsRepository: Repository<Account>,
     private readonly stellarService: StellarService,
     private readonly configService: ConfigService,
+    private readonly webhooksService: WebhooksService,
   ) {}
 
   onModuleInit(): void {
@@ -112,11 +114,18 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    const expiredAt = new Date();
     await this.accountsRepository.update(account.id, {
       status: AccountStatus.EXPIRED,
-      expiredAt: new Date(),
+      expiredAt,
     });
     this.logger.log(`Account ${account.id} status → EXPIRED`);
+
+    await this.webhooksService.triggerEvent('account.expired', {
+      accountId: account.id,
+      publicKey: account.publicKey,
+      expiredAt,
+    });
   }
 
   /**

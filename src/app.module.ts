@@ -15,6 +15,8 @@ import { AppService } from './app.service.js';
 import { SweepsModule } from './modules/sweeps/sweeps.module.js';
 import { SchedulerModule } from './modules/scheduler/scheduler.module.js';
 import { PaymentMonitorModule } from './modules/payment-monitor/payment-monitor.module.js';
+import { ClaimsModule } from './modules/claims/claims.module.js';
+import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
 
 @Module({
   imports: [
@@ -37,10 +39,10 @@ import { PaymentMonitorModule } from './modules/payment-monitor/payment-monitor.
       },
     ]),
     AccountsModule,
-    // ClaimsModule,
+    ClaimsModule,
     SweepsModule,
     PaymentMonitorModule,
-    // WebhooksModule,
+    WebhooksModule,
     StellarModule,
     HealthModule,
     SchedulerModule,

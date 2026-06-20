@@ -6,6 +6,7 @@ import { Account } from '../accounts/entities/account.entity.js';
 import { AccountStatus } from '../accounts/enums/account-status.enum.js';
 import { SchedulerService } from './scheduler.service.js';
 import { StellarService } from '../stellar/stellar.service.js';
+import { WebhooksService } from '../webhooks/webhooks.service.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,12 +69,19 @@ describe('SchedulerService', () => {
       }),
     };
 
+    const webhooksMock = {
+      triggerEvent: jest
+        .fn<WebhooksService['triggerEvent']>()
+        .mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SchedulerService,
         { provide: getRepositoryToken(Account), useValue: accountsRepo },
         { provide: StellarService, useValue: stellarMock },
         { provide: ConfigService, useValue: configMock },
+        { provide: WebhooksService, useValue: webhooksMock },
       ],
     }).compile();
 
