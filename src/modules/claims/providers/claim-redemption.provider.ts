@@ -17,6 +17,7 @@ import { SecretEncryptionUtil } from '../../../common/crypto/secret-encryption.u
 import { ConfigService } from '@nestjs/config';
 import { TransactionHashValidator } from '../../../common/validators/transaction-hash.validator.js';
 import { StellarAddressValidator } from '../../../common/validators/stellar-address.validator.js';
+import { WebhooksService } from '../../webhooks/webhooks.service.js';
 
 @Injectable()
 export class ClaimRedemptionProvider {
@@ -30,8 +31,7 @@ export class ClaimRedemptionProvider {
     private tokenVerificationProvider: TokenVerificationProvider,
     private sweepsService: SweepsService,
     private configService: ConfigService,
-    // TEMPORARY: WebhooksService not yet implemented - commented out to allow dev server to start
-    // private webhooksService: WebhooksService,
+    private webhooksService: WebhooksService,
   ) {}
 
   async redeemClaim(
@@ -148,16 +148,15 @@ export class ClaimRedemptionProvider {
 
       this.logger.log(`Claim redeemed successfully: ${claim.id}`);
 
-      // TEMPORARY: WebhooksService not yet implemented - webhook trigger commented out
-      // await this.webhooksService.triggerEvent('sweep.completed', {
-      //   accountId: account.id,
-      //   amount: account.amount,
-      //   asset: account.asset,
-      //   destination: destinationAddress,
-      //   txHash: sweepResult.txHash,
-      //   sweptAt: claim.claimedAt,
-      //   metadata: account.metadata,
-      // });
+      await this.webhooksService.triggerEvent('sweep.completed', {
+        accountId: account.id,
+        amount: account.amount,
+        asset: account.asset,
+        destination: destinationAddress,
+        txHash: sweepResult.txHash,
+        sweptAt: claim.claimedAt,
+        metadata: account.metadata,
+      });
 
       return {
         success: true,
@@ -180,15 +179,14 @@ export class ClaimRedemptionProvider {
         typedError.stack,
       );
 
-      // TEMPORARY: WebhooksService not yet implemented - webhook trigger commented out
-      // await this.webhooksService.triggerEvent('sweep.failed', {
-      //   accountId: account.id,
-      //   amount: account.amount,
-      //   asset: account.asset,
-      //   destination: destinationAddress,
-      //   error: error.message,
-      //   timestamp: new Date(),
-      // });
+      await this.webhooksService.triggerEvent('sweep.failed', {
+        accountId: account.id,
+        amount: account.amount,
+        asset: account.asset,
+        destination: destinationAddress,
+        error: typedError.message,
+        timestamp: new Date(),
+      });
 
       throw error;
     }

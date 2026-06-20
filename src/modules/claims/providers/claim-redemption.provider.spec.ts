@@ -9,6 +9,7 @@ import { SweepsService } from '../../sweeps/sweeps.service.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
 import { ConfigService } from '@nestjs/config';
 import { SecretEncryptionUtil } from '../../../common/crypto/secret-encryption.util.js';
+import { WebhooksService } from '../../webhooks/webhooks.service.js';
 
 describe('ClaimRedemptionProvider', () => {
   let provider: ClaimRedemptionProvider;
@@ -30,6 +31,10 @@ describe('ClaimRedemptionProvider', () => {
 
   const mockSweepsService = {
     executeSweep: jest.fn(),
+  };
+
+  const mockWebhooksService = {
+    triggerEvent: jest.fn(),
   };
 
   // A valid 56-character Stellar address starting with 'G'
@@ -96,6 +101,10 @@ describe('ClaimRedemptionProvider', () => {
             ),
           },
         },
+        {
+          provide: WebhooksService,
+          useValue: mockWebhooksService,
+        },
       ],
     }).compile();
 
@@ -115,6 +124,7 @@ describe('ClaimRedemptionProvider', () => {
     mockSweepsService.executeSweep.mockResolvedValue(mockSweepResult);
     mockClaimsRepository.create.mockReturnValue({ ...mockClaim });
     mockClaimsRepository.save.mockResolvedValue({ ...mockClaim });
+    mockWebhooksService.triggerEvent.mockResolvedValue(undefined);
   });
 
   afterEach(() => {

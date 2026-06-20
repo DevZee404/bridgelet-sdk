@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { AccountStatus } from './enums/account-status.enum.js';
 import { SecretEncryptionUtil } from '../../common/crypto/secret-encryption.util.js';
+import { WebhooksService } from '../webhooks/webhooks.service.js';
 
 /**
  * AccountsService — Service-Level Documentation & Contributor Guidance
@@ -98,6 +99,7 @@ export class AccountsService {
     private configService: ConfigService,
     private jwtService: JwtService,
     private stellarService: StellarService,
+    private webhooksService: WebhooksService,
   ) {
     this.encryptionKey = this.configService.getOrThrow<string>(
       'stellar.encryptionKey',
@@ -156,6 +158,14 @@ export class AccountsService {
       // Both Horizon and contract succeeded — advance to real status
       account.status = AccountStatus.PENDING_PAYMENT;
       await this.accountsRepository.save(account);
+
+      await this.webhooksService.triggerEvent('account.created', {
+        accountId: account.id,
+        publicKey: account.publicKey,
+        amount: account.amount,
+        asset: account.asset,
+        expiresAt: account.expiresAt,
+      });
 
       return {
         accountId: account.id,

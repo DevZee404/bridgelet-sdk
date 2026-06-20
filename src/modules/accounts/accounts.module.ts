@@ -7,6 +7,7 @@ import { StellarModule } from '../stellar/stellar.module.js';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PaymentMonitorProvider } from '../stellar/providers/payment-monitor-provider.js';
+import { WebhooksModule } from '../webhooks/webhooks.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { PaymentMonitorProvider } from '../stellar/providers/payment-monitor-pro
       inject: [ConfigService],
     }),
     StellarModule,
+    WebhooksModule,
   ],
   controllers: [AccountsController],
   providers: [AccountsService, PaymentMonitorProvider],

@@ -1,7 +1,7 @@
 import { registerAs } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { dirname } from 'path';
-import { DataSource, DataSourceOptions } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { fileURLToPath } from 'url';
 
 export default registerAs(
@@ -39,4 +39,4 @@ export const AppDataSource = new DataSource({
   database: process.env.DATABASE_NAME || 'bridgelet',
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
   migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
-} as DataSourceOptions);
+});

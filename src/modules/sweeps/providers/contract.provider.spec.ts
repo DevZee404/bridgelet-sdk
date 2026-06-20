@@ -123,7 +123,7 @@ describe('ContractProvider', () => {
       accountId: jest.fn(() => validParams.ephemeralPublicKey),
       sequenceNumber: jest.fn(() => '1'),
       incrementSequenceNumber: jest.fn(),
-    } as unknown as Account;
+    };
 
     mockOperation = {
       type: 'invokeHostFunction',
@@ -1246,7 +1246,7 @@ describe('ContractProvider', () => {
 
       (Contract as jest.Mock).mockImplementationOnce(() => {
         callOrder.push('Contract');
-        return mockContract as unknown as Contract;
+        return mockContract;
       });
 
       mockRpcServer.getAccount.mockImplementationOnce(() => {
@@ -1256,7 +1256,7 @@ describe('ContractProvider', () => {
 
       (Address.fromString as jest.Mock).mockImplementationOnce(() => {
         callOrder.push('Address.fromString');
-        return mockAddress as unknown as ReturnType<typeof Address.fromString>;
+        return mockAddress;
       });
 
       (TransactionBuilder as unknown as jest.Mock).mockImplementationOnce(
