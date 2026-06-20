@@ -12,19 +12,18 @@ import { Webhook } from './entities/webhook.entity.js';
 const WEBHOOK_SECRET = 'test-secret-key';
 const WEBHOOK_URL = 'https://example.com/hook';
 
-const makeWebhook = (overrides: Partial<Webhook> = {}): Webhook =>
-  ({
-    id: 'webhook-uuid-1',
-    url: WEBHOOK_URL,
-    secret: WEBHOOK_SECRET,
-    events: ['sweep.completed', 'account.created'],
-    isActive: true,
-    description: null,
-    lastTriggeredAt: null,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-    ...overrides,
-  }) as Webhook;
+const makeWebhook = (overrides: Partial<Webhook> = {}): Webhook => ({
+  id: 'webhook-uuid-1',
+  url: WEBHOOK_URL,
+  secret: WEBHOOK_SECRET,
+  events: ['sweep.completed', 'account.created'],
+  isActive: true,
+  description: null,
+  lastTriggeredAt: null,
+  createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  ...overrides,
+});
 
 function expectedSignature(body: string, secret: string | null): string {
   return crypto
@@ -222,7 +221,9 @@ describe('WebhooksService', () => {
         { headers: Record<string, string>; body: string },
       ];
 
-      expect(init.headers['X-Bridgelet-Signature']).toMatch(/^sha256=[a-f0-9]{64}$/);
+      expect(init.headers['X-Bridgelet-Signature']).toMatch(
+        /^sha256=[a-f0-9]{64}$/,
+      );
       const expected = `sha256=${expectedSignature(init.body, null)}`;
       expect(init.headers['X-Bridgelet-Signature']).toBe(expected);
     });
@@ -274,9 +275,7 @@ describe('WebhooksService', () => {
       const webhook = makeWebhook();
       mockQb.getMany.mockResolvedValue([webhook]);
 
-      jest
-        .spyOn(global, 'fetch')
-        .mockRejectedValue(new Error('ECONNREFUSED'));
+      jest.spyOn(global, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
 
       await expect(
         service.triggerEvent('sweep.completed', { accountId: 'acc-net-err' }),
@@ -287,9 +286,7 @@ describe('WebhooksService', () => {
       const webhook = makeWebhook();
       mockQb.getMany.mockResolvedValue([webhook]);
 
-      jest
-        .spyOn(global, 'fetch')
-        .mockRejectedValue(new Error('ECONNREFUSED'));
+      jest.spyOn(global, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
 
       await service.triggerEvent('account.created', {
         accountId: 'acc-net-log',

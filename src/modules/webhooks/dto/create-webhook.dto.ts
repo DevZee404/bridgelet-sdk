@@ -7,7 +7,12 @@ export class CreateWebhookDto {
   url: string;
 
   @ApiProperty({
-    example: ['sweep.completed', 'sweep.failed', 'account.created', 'account.expired'],
+    example: [
+      'sweep.completed',
+      'sweep.failed',
+      'account.created',
+      'account.expired',
+    ],
     description: 'Event types to subscribe to',
   })
   @IsArray()

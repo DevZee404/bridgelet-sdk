@@ -73,7 +73,10 @@ export class WebhooksService {
   ): Promise<void> {
     const body = JSON.stringify({ event: eventType, ...payload });
     const signature = this.computeSignature(body, webhook.secret);
-    const accountId = String(payload['accountId'] ?? 'unknown');
+
+    const rawAccountId = payload['accountId'];
+    const accountId =
+      typeof rawAccountId === 'string' ? rawAccountId : 'unknown';
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10_000);
