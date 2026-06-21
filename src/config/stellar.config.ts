@@ -13,5 +13,6 @@ export default registerAs('stellar', () => ({
     ephemeralAccount: process.env.EPHEMERAL_ACCOUNT_CONTRACT_ID,
     sweepController: process.env.STELLAR_SWEEP_CONTROLLER_CONTRACT_ID,
   },
+  sweepSigningKeySeed: process.env.SWEEP_SIGNING_KEY_SEED,
   encryptionKey: process.env.ENCRYPTION_KEY || '64_char_hex_string_here',
 }));
