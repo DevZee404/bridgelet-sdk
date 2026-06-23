@@ -77,7 +77,7 @@ export class SweepSignerUtil {
 
     const combined = Buffer.concat([destXdr, nonceBuf, contractXdr]);
 
-    // SHA256 hash - mirrors env.crypto().sha256() in Soroban
+    // SHA256 hash — mirrors env.crypto().sha256() in Soroban
     return crypto.createHash('sha256').update(combined).digest();
   }
 }
@@ -87,7 +87,7 @@ export class SweepSignerUtil {
  * Soroban's Address.to_xdr() produces an ScVal of type SCV_ADDRESS containing
  * an AccountId (for G... keys) or ContractId (for C... keys).
  *
- * Use @stellar/stellar-sdk's xdr module for correctness - do not hand-roll.
+ * Use @stellar/stellar-sdk's xdr module for correctness — do not hand-roll.
  */
 function encodeAddressToXdr(strKey: string): Buffer {
   const scVal = Address.fromString(strKey).toScVal();

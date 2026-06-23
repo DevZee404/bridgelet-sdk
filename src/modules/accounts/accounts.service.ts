@@ -153,6 +153,9 @@ export class AccountsService {
         contractId: this.configService.getOrThrow<string>(
           'stellar.contracts.ephemeralAccount',
         ),
+        sweepControllerContractId: this.configService.getOrThrow<string>(
+          'stellar.contracts.sweepController',
+        ),
       });
 
       // Both Horizon and contract succeeded — advance to real status
