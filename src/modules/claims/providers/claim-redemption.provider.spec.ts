@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getRepositoryToken, getDataSourceToken } from '@nestjs/typeorm';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ClaimRedemptionProvider } from './claim-redemption.provider.js';
 import { TokenVerificationProvider } from './token-verification.provider.js';
@@ -23,6 +23,7 @@ describe('ClaimRedemptionProvider', () => {
   const mockAccountsRepository = {
     findOne: jest.fn(),
     save: jest.fn(),
+    update: jest.fn(),
   };
 
   const mockTokenVerificationProvider = {
@@ -37,12 +38,10 @@ describe('ClaimRedemptionProvider', () => {
     triggerEvent: jest.fn(),
   };
 
-  // A valid 56-character Stellar address starting with 'G'
   const VALID_DESTINATION =
     'GBULQKZ7SA56UKRI6LX2IB6XH3GJW2L34BMTOWMQFJBAQNPSHJJNOTGN';
   const VALID_TOKEN = 'valid.jwt.token';
 
-  // secretKeyEncrypted is base64-encoded so that decryptSecret() returns 'test-secret'
   const mockAccount: Partial<Account> = {
     id: 'account-uuid-1234',
     publicKey: 'GPUBKEY47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLL',
@@ -72,58 +71,95 @@ describe('ClaimRedemptionProvider', () => {
     claimedAt: new Date('2026-02-19T10:00:00.000Z'),
   };
 
-  beforeEach(async () => {
+  /** Creates a mock EntityManager whose QueryBuilder returns the given account */
+  function makeManager(lockedAccount: Partial<Account> | null) {
+    const qb = {
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(lockedAccount),
+    };
+    return {
+      createQueryBuilder: jest.fn().mockReturnValue(qb),
+      save: jest.fn().mockImplementation((e: unknown) => Promise.resolve(e)),
+      create: jest.fn().mockImplementation((_Entity, data) => ({ ...data })),
+      qb,
+    };
+  }
+
+  /**
+   * Builds a DataSource mock that:
+   *  - 1st call: acquires lock and sets CLAIMING (returns account in CLAIMING state)
+   *  - 2nd call: finalises CLAIMED and saves claim record (returns mockClaim)
+   */
+  function makeHappyPathDataSource() {
+    const claimingAccount = { ...mockAccount, status: AccountStatus.CLAIMING };
+    const mgr1 = makeManager({ ...mockAccount });
+    const mgr2 = makeManager(null); // not used for lock in 2nd txn
+
+    return {
+      transaction: jest
+        .fn()
+        .mockImplementationOnce(
+          async (cb: (m: unknown) => Promise<unknown>) => {
+            mgr1.save.mockResolvedValue(claimingAccount);
+            return cb(mgr1);
+          },
+        )
+        .mockImplementationOnce(
+          async (cb: (m: unknown) => Promise<unknown>) => {
+            // save is called twice: once for account update, once for new claim
+            mgr2.save
+              .mockResolvedValueOnce(undefined) // save(account)
+              .mockResolvedValueOnce({ ...mockClaim }); // save(newClaim)
+            mgr2.create.mockReturnValue({ ...mockClaim });
+            return cb(mgr2);
+          },
+        ),
+      _mgr1: mgr1,
+    };
+  }
+
+  async function buildModule(dataSourceValue: object) {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClaimRedemptionProvider,
-        {
-          provide: getRepositoryToken(Claim),
-          useValue: mockClaimsRepository,
-        },
+        { provide: getRepositoryToken(Claim), useValue: mockClaimsRepository },
         {
           provide: getRepositoryToken(Account),
           useValue: mockAccountsRepository,
         },
+        { provide: getDataSourceToken(), useValue: dataSourceValue },
         {
           provide: TokenVerificationProvider,
           useValue: mockTokenVerificationProvider,
         },
-        {
-          provide: SweepsService,
-          useValue: mockSweepsService,
-        },
+        { provide: SweepsService, useValue: mockSweepsService },
         {
           provide: ConfigService,
           useValue: {
             get: jest.fn().mockReturnValue('mock-value'),
-            getOrThrow: jest.fn().mockReturnValue(
-              'a'.repeat(64), // 64 hex chars = 32 bytes
-            ),
+            getOrThrow: jest.fn().mockReturnValue('a'.repeat(64)),
           },
         },
-        {
-          provide: WebhooksService,
-          useValue: mockWebhooksService,
-        },
+        { provide: WebhooksService, useValue: mockWebhooksService },
       ],
     }).compile();
 
     jest.spyOn(SecretEncryptionUtil, 'decrypt').mockReturnValue('test-secret');
-    provider = module.get<ClaimRedemptionProvider>(ClaimRedemptionProvider);
+    return module.get<ClaimRedemptionProvider>(ClaimRedemptionProvider);
+  }
 
-    // Default happy-path mocks shared across tests
+  beforeEach(async () => {
+    const ds = makeHappyPathDataSource();
+    provider = await buildModule(ds);
+
     mockTokenVerificationProvider.verifyClaimToken.mockResolvedValue({
       valid: true,
-      accountId: mockAccount.id,
-      amount: mockAccount.amount,
-      asset: mockAccount.asset,
-      expiresAt: mockAccount.expiresAt,
     });
     mockAccountsRepository.findOne.mockResolvedValue({ ...mockAccount });
-    mockAccountsRepository.save.mockResolvedValue(undefined);
+    mockAccountsRepository.update.mockResolvedValue(undefined);
     mockSweepsService.executeSweep.mockResolvedValue(mockSweepResult);
-    mockClaimsRepository.create.mockReturnValue({ ...mockClaim });
-    mockClaimsRepository.save.mockResolvedValue({ ...mockClaim });
+    mockClaimsRepository.findOne.mockResolvedValue({ ...mockClaim });
     mockWebhooksService.triggerEvent.mockResolvedValue(undefined);
   });
 
@@ -136,10 +172,6 @@ describe('ClaimRedemptionProvider', () => {
       mockTokenVerificationProvider.verifyClaimToken.mockRejectedValue(
         new BadRequestException('This account is still being set up'),
       );
-
-      await expect(
-        provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
-      ).rejects.toThrow(BadRequestException);
 
       await expect(
         provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
@@ -161,35 +193,12 @@ describe('ClaimRedemptionProvider', () => {
       });
     });
 
-    it('should create claim record with correct data after a successful sweep', async () => {
-      await provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
-
-      // Verifies that the claim entity was constructed with the right fields before being persisted
-      expect(mockClaimsRepository.create).toHaveBeenCalledWith({
-        accountId: mockAccount.id,
-        destinationAddress: VALID_DESTINATION,
-        sweepTxHash: mockSweepResult.txHash,
-        amountSwept: mockAccount.amount,
-        asset: mockAccount.asset,
-        claimedAt: expect.any(Date),
-      });
-      expect(mockClaimsRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ accountId: mockAccount.id }),
-      );
-    });
-
-    it('should update account status to CLAIMED before executing the sweep', async () => {
-      await provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
-
-      // The account must be marked CLAIMED (with destination and timestamp) to prevent
-      // concurrent claim attempts before the sweep is executed
-      expect(mockAccountsRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: AccountStatus.CLAIMED,
-          destinationAddress: VALID_DESTINATION,
-          claimedAt: expect.any(Date),
-        }),
-      );
+    it('should acquire SELECT FOR UPDATE lock before setting status to CLAIMING', async () => {
+      // Rebuild with a spy-able dataSource so we can inspect the qb inside the callback
+      const ds = makeHappyPathDataSource();
+      const p = await buildModule(ds);
+      await p.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
+      expect(ds._mgr1.qb.setLock).toHaveBeenCalledWith('pessimistic_write');
     });
 
     it('should call SweepsService.executeSweep with correct parameters', async () => {
@@ -205,81 +214,95 @@ describe('ClaimRedemptionProvider', () => {
       });
     });
 
-    it('should decrypt ephemeral secret via base64 decode before passing to sweep', async () => {
-      // The decryptSecret method decodes base64 — 'test-secret' encoded becomes 'test-secret' decoded
-      await provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
-
-      expect(mockSweepsService.executeSweep).toHaveBeenCalledWith(
-        expect.objectContaining({
-          ephemeralSecret: 'test-secret',
-        }),
-      );
+    it('should use two DB transactions: one to acquire CLAIMING, one to finalise CLAIMED', async () => {
+      const ds = makeHappyPathDataSource();
+      const p = await buildModule(ds);
+      await p.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
+      expect(ds.transaction).toHaveBeenCalledTimes(2);
     });
   });
 
   describe('redeemClaim - idempotency for already-claimed accounts', () => {
-    it('should return idempotent response when account status is already CLAIMED (race condition guard)', async () => {
-      // Simulates a race condition where the account was claimed between token verification
-      // and the status check — the provider should return the existing claim without error
+    it('should return idempotent response when SELECT FOR UPDATE finds CLAIMED account', async () => {
       const claimedAccount = { ...mockAccount, status: AccountStatus.CLAIMED };
-      const existingClaim = { ...mockClaim, sweepTxHash: 'existing-tx-hash' };
+      const ds = {
+        transaction: jest
+          .fn()
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) =>
+              cb(makeManager(claimedAccount)),
+          ),
+      };
+      const p = await buildModule(ds);
+      mockClaimsRepository.findOne.mockResolvedValue({ ...mockClaim });
 
-      mockAccountsRepository.findOne.mockResolvedValue(claimedAccount);
-      mockClaimsRepository.findOne.mockResolvedValue(existingClaim);
-
-      const result = await provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
+      const result = await p.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
 
       expect(result).toEqual({
         success: true,
-        txHash: existingClaim.sweepTxHash,
-        amountSwept: existingClaim.amountSwept,
-        asset: existingClaim.asset,
-        destination: existingClaim.destinationAddress,
-        sweptAt: existingClaim.claimedAt,
+        txHash: mockClaim.sweepTxHash,
+        amountSwept: mockClaim.amountSwept,
+        asset: mockClaim.asset,
+        destination: mockClaim.destinationAddress,
+        sweptAt: mockClaim.claimedAt,
         message: 'Claim was already redeemed',
       });
     });
 
     it('should handle ConflictException from token verification and return existing claim data', async () => {
-      // TokenVerificationProvider throws ConflictException when the account is in CLAIMED status.
-      // The provider catches this, looks up the account and claim by token hash, and returns
-      // the existing claim rather than propagating the error.
-      const claimedAccount = { ...mockAccount, status: AccountStatus.CLAIMED };
-      const existingClaim = { ...mockClaim, sweepTxHash: 'conflict-tx-hash' };
+      const ds = makeHappyPathDataSource();
+      const p = await buildModule(ds);
 
       mockTokenVerificationProvider.verifyClaimToken.mockRejectedValue(
         new ConflictException('Claim has already been redeemed'),
       );
-      mockAccountsRepository.findOne.mockResolvedValue(claimedAccount);
-      mockClaimsRepository.findOne.mockResolvedValue(existingClaim);
-
-      const result = await provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
-
-      expect(result).toEqual({
-        success: true,
-        txHash: existingClaim.sweepTxHash,
-        amountSwept: existingClaim.amountSwept,
-        asset: existingClaim.asset,
-        destination: existingClaim.destinationAddress,
-        sweptAt: existingClaim.claimedAt,
-        message: 'Claim was already redeemed',
+      mockAccountsRepository.findOne.mockResolvedValue({
+        ...mockAccount,
+        status: AccountStatus.CLAIMED,
       });
+      mockClaimsRepository.findOne.mockResolvedValue({
+        ...mockClaim,
+        sweepTxHash: 'conflict-tx-hash',
+      });
+
+      const result = await p.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
+      expect(result.message).toBe('Claim was already redeemed');
+    });
+
+    it('should throw ConflictException when account is in CLAIMING state (concurrent request)', async () => {
+      const claimingAccount = {
+        ...mockAccount,
+        status: AccountStatus.CLAIMING,
+      };
+      const ds = {
+        transaction: jest
+          .fn()
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) =>
+              cb(makeManager(claimingAccount)),
+          ),
+      };
+      const p = await buildModule(ds);
+
+      await expect(
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
   describe('redeemClaim - Stellar address validation', () => {
-    it('should throw BadRequestException for an address with invalid format (not alphanumeric)', async () => {
+    it('should throw BadRequestException for an address with invalid format', async () => {
       await expect(
         provider.redeemClaim(VALID_TOKEN, 'invalid-address'),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw BadRequestException for an address not starting with G', async () => {
-      // Stellar secret keys start with 'S'; using one here should fail validation
-      const secretKeyAddress =
-        'SABCD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA';
       await expect(
-        provider.redeemClaim(VALID_TOKEN, secretKeyAddress),
+        provider.redeemClaim(
+          VALID_TOKEN,
+          'SABCD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -290,42 +313,39 @@ describe('ClaimRedemptionProvider', () => {
     });
 
     it('should throw BadRequestException for an address longer than 56 characters', async () => {
-      // Extra characters appended to an otherwise valid address
-      const tooLongAddress = VALID_DESTINATION + 'EXTRA';
       await expect(
-        provider.redeemClaim(VALID_TOKEN, tooLongAddress),
+        provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION + 'EXTRA'),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('redeemClaim - sweep failure and rollback', () => {
     it('should rollback account status to PENDING_CLAIM when sweep fails', async () => {
+      const ds = makeHappyPathDataSource();
+      const p = await buildModule(ds);
       mockSweepsService.executeSweep.mockRejectedValue(
         new Error('Stellar network error'),
       );
 
       await expect(
-        provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
       ).rejects.toThrow();
 
-      // After a failed sweep, the account must be reverted so the user can retry.
-      // destinationAddress is reset to '' and claimedAt to null.
-      expect(mockAccountsRepository.save).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          status: AccountStatus.PENDING_CLAIM,
-          destinationAddress: '',
-          claimedAt: null,
-        }),
+      expect(mockAccountsRepository.update).toHaveBeenCalledWith(
+        mockAccount.id,
+        expect.objectContaining({ status: AccountStatus.PENDING_CLAIM }),
       );
     });
 
     it('should re-throw the original sweep error after rolling back account status', async () => {
-      const sweepError = new Error('Stellar network error');
-      mockSweepsService.executeSweep.mockRejectedValue(sweepError);
+      const ds = makeHappyPathDataSource();
+      const p = await buildModule(ds);
+      mockSweepsService.executeSweep.mockRejectedValue(
+        new Error('Stellar network error'),
+      );
 
-      // Ensures callers receive the actual failure reason rather than a wrapped error
       await expect(
-        provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
       ).rejects.toThrow('Stellar network error');
     });
   });

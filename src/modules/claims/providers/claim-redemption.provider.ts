@@ -4,8 +4,8 @@ import {
   Logger,
   ConflictException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import * as crypto from 'crypto';
 import { Claim } from '../entities/claim.entity.js';
 import { Account } from '../../accounts/entities/account.entity.js';
@@ -28,6 +28,8 @@ export class ClaimRedemptionProvider {
     private claimsRepository: Repository<Claim>,
     @InjectRepository(Account)
     private accountsRepository: Repository<Account>,
+    @InjectDataSource()
+    private dataSource: DataSource,
     private tokenVerificationProvider: TokenVerificationProvider,
     private sweepsService: SweepsService,
     private configService: ConfigService,
@@ -40,14 +42,12 @@ export class ClaimRedemptionProvider {
   ): Promise<ClaimRedemptionResponseDto> {
     this.logger.log(`Redeeming claim for destination: ${destinationAddress}`);
 
-    // Verify token first
-    // In claim-redemption.provider.ts redeemClaim method:
     const tokenHash = this.hashToken(token);
+
     try {
       await this.tokenVerificationProvider.verifyClaimToken(token);
     } catch (error) {
       if (error instanceof ConflictException) {
-        // Account already claimed - return existing claim
         const claimedAccount = await this.accountsRepository.findOne({
           where: { claimTokenHash: tokenHash },
         });
@@ -71,33 +71,48 @@ export class ClaimRedemptionProvider {
       throw error;
     }
 
-    // Validate destination address
     StellarAddressValidator.assertValid(destinationAddress);
 
-    // Get account
-    const account = await this.accountsRepository.findOne({
-      where: { claimTokenHash: tokenHash },
-    });
+    // Atomically acquire the claim slot using SELECT FOR UPDATE.
+    // This prevents concurrent requests from both passing the status check.
+    const account = await this.dataSource.transaction(
+      async (manager: EntityManager) => {
+        const locked = await manager
+          .createQueryBuilder(Account, 'account')
+          .setLock('pessimistic_write')
+          .where('account.claimTokenHash = :tokenHash', { tokenHash })
+          .getOne();
 
-    if (!account) {
-      throw new BadRequestException('Invalid or expired claim token');
-    }
+        if (!locked) {
+          throw new BadRequestException('Invalid or expired claim token');
+        }
 
-    // Double-check not already claimed (race condition protection)
+        if (locked.status === AccountStatus.CLAIMED) {
+          return locked;
+        }
+
+        if (locked.status === AccountStatus.CLAIMING) {
+          throw new ConflictException('Claim is already being processed');
+        }
+
+        locked.status = AccountStatus.CLAIMING;
+        locked.destinationAddress = destinationAddress;
+        await manager.save(locked);
+        return locked;
+      },
+    );
+
+    // Idempotent response for already-claimed account
     if (account.status === AccountStatus.CLAIMED) {
       this.logger.log(`Claim already redeemed for account: ${account.id}`);
-
-      // Return existing claim details
       const existingClaim = await this.claimsRepository.findOne({
         where: { accountId: account.id },
       });
-
       if (!existingClaim) {
         throw new BadRequestException(
           'Claim record not found for already redeemed account',
         );
       }
-
       return {
         success: true,
         txHash: existingClaim.sweepTxHash,
@@ -109,14 +124,7 @@ export class ClaimRedemptionProvider {
       };
     }
 
-    // Update account status to prevent concurrent claims
-    account.status = AccountStatus.CLAIMED;
-    account.destinationAddress = destinationAddress;
-    account.claimedAt = new Date();
-    await this.accountsRepository.save(account);
-
     try {
-      // Execute sweep via SweepsService
       const sweepResult = await this.sweepsService.executeSweep({
         accountId: account.id,
         ephemeralPublicKey: account.publicKey,
@@ -124,27 +132,31 @@ export class ClaimRedemptionProvider {
           account.secretKeyEncrypted,
           this.configService.getOrThrow<string>('stellar.encryptionKey'),
         ),
-
         destinationAddress,
         amount: account.amount,
         asset: account.asset,
       });
 
-      // Guard: never persist a placeholder or invalid hash.
-      // If this throws, the outer catch block will roll back account status.
       TransactionHashValidator.assertValid(sweepResult.txHash);
 
-      // Create claim record
-      const claim = this.claimsRepository.create({
-        accountId: account.id,
-        destinationAddress,
-        sweepTxHash: sweepResult.txHash,
-        amountSwept: account.amount,
-        asset: account.asset,
-        claimedAt: new Date(),
-      });
+      // Atomically record the claim and mark account as CLAIMED
+      const claim = await this.dataSource.transaction(
+        async (manager: EntityManager) => {
+          account.status = AccountStatus.CLAIMED;
+          account.claimedAt = new Date();
+          await manager.save(account);
 
-      await this.claimsRepository.save(claim);
+          const newClaim = manager.create(Claim, {
+            accountId: account.id,
+            destinationAddress,
+            sweepTxHash: sweepResult.txHash,
+            amountSwept: account.amount,
+            asset: account.asset,
+            claimedAt: account.claimedAt,
+          });
+          return manager.save(newClaim);
+        },
+      );
 
       this.logger.log(`Claim redeemed successfully: ${claim.id}`);
 
@@ -167,11 +179,11 @@ export class ClaimRedemptionProvider {
         sweptAt: claim.claimedAt,
       };
     } catch (error) {
-      // Revert account status on failure
-      account.status = AccountStatus.PENDING_CLAIM;
-      account.destinationAddress = '';
-      account.claimedAt = null;
-      await this.accountsRepository.save(account);
+      // Revert from CLAIMING back to PENDING_CLAIM so the user can retry
+      await this.accountsRepository.update(account.id, {
+        status: AccountStatus.PENDING_CLAIM,
+        destinationAddress: '',
+      });
 
       const typedError = error as Error;
       this.logger.error(
