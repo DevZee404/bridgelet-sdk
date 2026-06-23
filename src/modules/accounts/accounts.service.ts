@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { AccountStatus } from './enums/account-status.enum.js';
 import { SecretEncryptionUtil } from '../../common/crypto/secret-encryption.util.js';
 import { WebhooksService } from '../webhooks/webhooks.service.js';
+import { sanitizeMetadata } from '../../common/utils/metadata-sanitizer.util.js';
 
 /**
  * AccountsService — Service-Level Documentation & Contributor Guidance
@@ -138,7 +139,7 @@ export class AccountsService {
       status: AccountStatus.INITIALIZING,
       claimTokenHash,
       expiresAt,
-      metadata: createAccountDto.metadata,
+      metadata: sanitizeMetadata(createAccountDto.metadata),
     });
 
     await this.accountsRepository.save(account);
