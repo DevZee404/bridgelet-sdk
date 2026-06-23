@@ -36,9 +36,21 @@ describe('sanitizeMetadata', () => {
   });
 
   it.each([
-    'email', 'phone', 'phonenumber', 'mobile', 'ssn', 'dob',
-    'dateofbirth', 'address', 'fullname', 'firstname', 'lastname',
-    'name', 'nationalid', 'passport', 'taxid',
+    'email',
+    'phone',
+    'phonenumber',
+    'mobile',
+    'ssn',
+    'dob',
+    'dateofbirth',
+    'address',
+    'fullname',
+    'firstname',
+    'lastname',
+    'name',
+    'nationalid',
+    'passport',
+    'taxid',
   ])('strips the PII key "%s"', (key) => {
     const result = sanitizeMetadata({ [key]: 'sensitive', safe: 'ok' });
     expect(result).not.toHaveProperty(key);
@@ -52,7 +64,7 @@ describe('sanitizeMetadata', () => {
 
   it('accepts metadata exactly at the byte limit', () => {
     // Build a payload whose JSON serialisation is exactly METADATA_MAX_BYTES
-    const value = 'x'.repeat(METADATA_MAX_BYTES - '{"data":""}' .length);
+    const value = 'x'.repeat(METADATA_MAX_BYTES - '{"data":""}'.length);
     const result = sanitizeMetadata({ data: value });
     expect(result).toHaveProperty('data');
   });
