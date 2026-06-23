@@ -124,6 +124,12 @@ export class AccountsService {
       .update(claimToken)
       .digest('hex');
 
+    // Derive combined asset string from asset_code + asset_issuer when provided
+    const asset =
+      createAccountDto.asset_code && createAccountDto.asset_issuer
+        ? `${createAccountDto.asset_code}:${createAccountDto.asset_issuer}`
+        : (createAccountDto.asset_code ?? 'native');
+
     // Save with INITIALIZING status first so we have a DB record for cleanup
     // if the Stellar/contract steps fail
     const account = this.accountsRepository.create({
@@ -134,7 +140,7 @@ export class AccountsService {
       ),
       fundingSource: createAccountDto.fundingSource,
       amount: createAccountDto.amount,
-      asset: createAccountDto.asset,
+      asset,
       status: AccountStatus.INITIALIZING,
       claimTokenHash,
       expiresAt,
@@ -147,9 +153,9 @@ export class AccountsService {
       const txHash = await this.stellarService.createEphemeralAccount({
         publicKey: ephemeralKeypair.publicKey(),
         amount: createAccountDto.amount,
-        asset: createAccountDto.asset,
+        asset,
         expiresIn: createAccountDto.expiresIn,
-        recoveryAddress: createAccountDto.fundingSource,
+        recoveryAddress: createAccountDto.recovery_address,
         contractId: this.configService.getOrThrow<string>(
           'stellar.contracts.ephemeralAccount',
         ),
