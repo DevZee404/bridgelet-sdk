@@ -80,10 +80,11 @@ export class StellarService {
     publicKey: string;
     amount: string;
     asset: string;
-    expiresIn: number; // seconds — was expiresAt: Date, now used for ledger conversion
-    recoveryAddress: string; // maps to fundingSource from CreateAccountDto
-    contractId: string; // deployed EphemeralAccount contract address
-    fundingKeypairSecret?: string; // optional override for testing
+    expiresIn: number;
+    recoveryAddress: string;
+    contractId: string;
+    sweepControllerContractId: string;
+    fundingKeypairSecret?: string;
   }): Promise<string> {
     this.logger.log(`Creating ephemeral account: ${params.publicKey}`);
 
@@ -132,6 +133,9 @@ export class StellarService {
           StellarSdk.Address.fromString(fundingKeypair.publicKey()).toScVal(), // creator
           StellarSdk.xdr.ScVal.scvU32(expiryLedger), // expiry_ledger
           StellarSdk.Address.fromString(params.recoveryAddress).toScVal(), // recovery_address
+          StellarSdk.Address.fromString(
+            params.sweepControllerContractId,
+          ).toScVal(), // authorized_controller
         ),
       )
       .setTimeout(30)

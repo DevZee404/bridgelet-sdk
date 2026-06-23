@@ -122,7 +122,7 @@ export class ClaimRedemptionProvider {
         ephemeralPublicKey: account.publicKey,
         ephemeralSecret: SecretEncryptionUtil.decrypt(
           account.secretKeyEncrypted,
-          this.configService.getOrThrow<string>('app.encryptionKey'),
+          this.configService.getOrThrow<string>('stellar.encryptionKey'),
         ),
 
         destinationAddress,
