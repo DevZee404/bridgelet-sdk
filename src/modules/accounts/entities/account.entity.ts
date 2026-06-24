@@ -14,7 +14,7 @@ export class Account {
   id: string;
 
   @Column({ type: 'varchar', length: 56, unique: true })
-  @Index()
+  @Index('IDX_accounts_publicKey')
   publicKey: string;
 
   @Column({ type: 'text' })
@@ -32,20 +32,21 @@ export class Account {
   @Column({
     type: 'enum',
     enum: AccountStatus,
+    enumName: 'account_status_enum',
     default: AccountStatus.PENDING_PAYMENT,
   })
-  @Index()
+  @Index('IDX_accounts_status')
   status: AccountStatus;
 
   @Column({ type: 'varchar', length: 64, nullable: true })
-  @Index()
+  @Index('IDX_accounts_claimTokenHash')
   claimTokenHash: string;
 
   @Column({ type: 'varchar', length: 56, nullable: true })
   destinationAddress: string;
 
   @Column({ type: 'timestamp' })
-  @Index()
+  @Index('IDX_accounts_expiresAt')
   expiresAt: Date; // Scheduled expiry time - set on creation, used by the expiry scheduler
 
   @CreateDateColumn()

@@ -17,11 +17,14 @@ export class Claim {
   id: string;
 
   @Column({ type: 'uuid' })
-  @Index()
+  @Index('IDX_claims_accountId')
   accountId: string;
 
   @ManyToOne(() => Account, { eager: false, onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'accountId' })
+  @JoinColumn({
+    name: 'accountId',
+    foreignKeyConstraintName: 'FK_claims_accountId',
+  })
   account: Account;
 
   @Column({ type: 'varchar', length: 56 })
