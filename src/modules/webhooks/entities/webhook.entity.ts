@@ -22,7 +22,7 @@ export class Webhook {
   events: string[];
 
   @Column({ type: 'boolean', default: true })
-  @Index()
+  @Index('IDX_webhooks_isActive')
   isActive: boolean;
 
   @Column({ type: 'varchar', length: 255, nullable: true })
