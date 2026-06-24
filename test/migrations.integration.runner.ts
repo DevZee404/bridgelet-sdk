@@ -40,7 +40,9 @@ async function getFreePort(): Promise<number> {
       const address = server.address();
 
       if (address == null || typeof address === 'string') {
-        reject(new Error('Unable to allocate a local port for migration checks.'));
+        reject(
+          new Error('Unable to allocate a local port for migration checks.'),
+        );
         return;
       }
 
@@ -96,11 +98,11 @@ async function main(): Promise<void> {
     await dataSource.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
 
     const executedMigrations = await dataSource.runMigrations();
-    const schemaLog = (await (
+    const schemaLog = await (
       dataSource.driver.createSchemaBuilder() as unknown as {
         log: () => Promise<SqlInMemoryLog>;
       }
-    ).log()) as SqlInMemoryLog;
+    ).log();
 
     const enumRows: Array<{ enumlabel: string }> = await dataSource.query(`
       SELECT e.enumlabel
