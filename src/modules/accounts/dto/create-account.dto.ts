@@ -6,12 +6,14 @@ import {
   IsObject,
   Min,
   Max,
+  ValidateIf,
   Matches,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsStellarPublicKey } from '../../../common/validators/is-stellar-public-key.validator.js';
 
-const STELLAR_ASSET_REGEX = /^(native|[A-Z0-9]{1,12}:G[A-Z0-9]{55})$/;
+const ASSET_CODE_REGEX = /^[A-Z0-9]{1,12}$/;
+const ASSET_ISSUER_REGEX = /^G[A-Z0-9]{55}$/;
 
 export class CreateAccountDto {
   @ApiProperty({
@@ -25,28 +27,51 @@ export class CreateAccountDto {
   @IsStellarPublicKey()
   fundingSource: string;
 
+  @ApiProperty({
+    example: 'GRECOVERY...',
+    description:
+      'Stellar public key to recover funds to if the ephemeral account expires unclaimed. ' +
+      'Must be 56 characters, start with G, and contain only uppercase alphanumeric characters.',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @IsStellarPublicKey()
+  recovery_address: string;
+
   @ApiProperty({ example: '100', description: 'Payment amount' })
   @IsString()
   @IsNotEmpty()
   amount: string;
 
   @ApiProperty({
-    example: 'USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+    example: 'USDC',
     description:
-      'Asset to use for the ephemeral account. ' +
-      'Use "native" for XLM, or CODE:ISSUER for issued assets ' +
-      '(e.g. USDC:G...). CODE is 1 - 12 uppercase alphanumeric characters; ' +
-      'ISSUER must be a valid Stellar public key.',
+      'Asset code (1–12 uppercase alphanumeric characters). ' +
+      'Use "native" for XLM. Required when asset_issuer is provided.',
+    required: false,
   })
+  @IsOptional()
+  @IsString()
+  @Matches(ASSET_CODE_REGEX, {
+    message:
+      'asset_code must be 1–12 uppercase alphanumeric characters (e.g. USDC, XLM)',
+  })
+  asset_code?: string;
+
+  @ApiProperty({
+    example: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+    description:
+      'Stellar public key of the asset issuer. Required when asset_code is a non-native issued asset.',
+    required: false,
+  })
+  @ValidateIf((o: CreateAccountDto) => !!o.asset_code && o.asset_code !== 'XLM')
   @IsString()
   @IsNotEmpty()
-  @Matches(STELLAR_ASSET_REGEX, {
+  @Matches(ASSET_ISSUER_REGEX, {
     message:
-      'asset must be "native" (for XLM) or in the format CODE:ISSUER ' +
-      '(e.g. USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5), ' +
-      'where CODE is 1 - 12 uppercase alphanumeric characters and ISSUER is a valid Stellar public key',
+      'asset_issuer must be a valid Stellar public key (56 characters, starts with G)',
   })
-  asset: string;
+  asset_issuer?: string;
 
   @ApiProperty({
     example: 2592000,

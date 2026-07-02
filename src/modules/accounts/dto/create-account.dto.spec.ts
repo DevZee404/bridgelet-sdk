@@ -10,8 +10,10 @@ const LONG_KEY = 'G' + 'A'.repeat(56); // 57 chars  ✗
 // A fully valid base object — all tests override only the field under test
 const validBase = {
   fundingSource: VALID_KEY,
+  recovery_address: VALID_KEY,
   amount: '100',
-  asset: 'USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  asset_code: 'USDC',
+  asset_issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
   expiresIn: 3600,
 };
 
@@ -67,62 +69,117 @@ describe('CreateAccountDto — fundingSource', () => {
   });
 });
 
-// ─── asset ────────────────────────────────────────────────────────────────────
+// ─── recovery_address ─────────────────────────────────────────────────────────
 
-describe('CreateAccountDto — asset', () => {
-  it('accepts a valid issued asset (USDC with full issuer key)', async () => {
-    const errors = await errorsFor({
-      asset: 'USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-    });
-    expect(errors).not.toContain('asset');
+describe('CreateAccountDto — recovery_address', () => {
+  it('accepts a valid Stellar public key', async () => {
+    const errors = await errorsFor({ recovery_address: VALID_KEY });
+    expect(errors).not.toContain('recovery_address');
   });
 
-  it('accepts a valid alphanumeric code with minimal issuer (e.g. USDC1:G...)', async () => {
-    const errors = await errorsFor({
-      asset: 'USDC1:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-    });
-    expect(errors).not.toContain('asset');
+  it('rejects a key that is too short', async () => {
+    const errors = await errorsFor({ recovery_address: SHORT_KEY });
+    expect(errors).toContain('recovery_address');
   });
 
-  it('accepts the special-case string "native"', async () => {
-    const errors = await errorsFor({ asset: 'native' });
-    expect(errors).not.toContain('asset');
+  it('rejects a key that is too long', async () => {
+    const errors = await errorsFor({ recovery_address: LONG_KEY });
+    expect(errors).toContain('recovery_address');
   });
 
-  it('rejects an asset code with no issuer (e.g. "USDC")', async () => {
-    const errors = await errorsFor({ asset: 'USDC' });
-    expect(errors).toContain('asset');
-  });
-
-  it('rejects an asset code that is too long (13 chars before colon)', async () => {
-    const errors = await errorsFor({
-      asset:
-        'TOOLONGCODE1X:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-    });
-    expect(errors).toContain('asset');
-  });
-
-  it('rejects a lowercase asset code (e.g. "usdc:G...")', async () => {
-    const errors = await errorsFor({
-      asset: 'usdc:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-    });
-    expect(errors).toContain('asset');
-  });
-
-  it('rejects an asset with an invalid issuer (wrong length)', async () => {
-    const errors = await errorsFor({ asset: 'USDC:GBADISSUER' });
-    expect(errors).toContain('asset');
-  });
-
-  it('rejects an asset with an invalid issuer (does not start with G)', async () => {
-    const errors = await errorsFor({
-      asset: 'USDC:ABBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-    });
-    expect(errors).toContain('asset');
+  it('rejects a key not starting with G', async () => {
+    const errors = await errorsFor({ recovery_address: 'A' + 'A'.repeat(55) });
+    expect(errors).toContain('recovery_address');
   });
 
   it('rejects an empty string', async () => {
-    const errors = await errorsFor({ asset: '' });
-    expect(errors).toContain('asset');
+    const errors = await errorsFor({ recovery_address: '' });
+    expect(errors).toContain('recovery_address');
+  });
+
+  it('rejects when missing', async () => {
+    const errors = await errorsFor({ recovery_address: undefined });
+    expect(errors).toContain('recovery_address');
+  });
+});
+
+// ─── asset_code ───────────────────────────────────────────────────────────────
+
+describe('CreateAccountDto — asset_code', () => {
+  it('accepts a valid uppercase asset code', async () => {
+    const errors = await errorsFor({ asset_code: 'USDC' });
+    expect(errors).not.toContain('asset_code');
+  });
+
+  it('accepts a single-character code', async () => {
+    const errors = await errorsFor({
+      asset_code: 'X',
+      asset_issuer: undefined,
+    });
+    expect(errors).not.toContain('asset_code');
+  });
+
+  it('accepts a 12-character code (max length)', async () => {
+    const errors = await errorsFor({ asset_code: 'ABCDEFGHIJ12' });
+    expect(errors).not.toContain('asset_code');
+  });
+
+  it('rejects a lowercase code', async () => {
+    const errors = await errorsFor({ asset_code: 'usdc' });
+    expect(errors).toContain('asset_code');
+  });
+
+  it('rejects a code longer than 12 characters', async () => {
+    const errors = await errorsFor({ asset_code: 'TOOLONGCODE1X' });
+    expect(errors).toContain('asset_code');
+  });
+
+  it('rejects a code with special characters', async () => {
+    const errors = await errorsFor({ asset_code: 'USD!' });
+    expect(errors).toContain('asset_code');
+  });
+
+  it('is optional — omitting it produces no error', async () => {
+    const errors = await errorsFor({
+      asset_code: undefined,
+      asset_issuer: undefined,
+    });
+    expect(errors).not.toContain('asset_code');
+  });
+});
+
+// ─── asset_issuer ─────────────────────────────────────────────────────────────
+
+describe('CreateAccountDto — asset_issuer', () => {
+  it('accepts a valid Stellar public key as issuer', async () => {
+    const errors = await errorsFor({
+      asset_code: 'USDC',
+      asset_issuer: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+    });
+    expect(errors).not.toContain('asset_issuer');
+  });
+
+  it('rejects an invalid issuer key (wrong length)', async () => {
+    const errors = await errorsFor({
+      asset_code: 'USDC',
+      asset_issuer: 'GBADISSUER',
+    });
+    expect(errors).toContain('asset_issuer');
+  });
+
+  it('rejects an issuer not starting with G', async () => {
+    const errors = await errorsFor({
+      asset_code: 'USDC',
+      asset_issuer: 'ABBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+    });
+    expect(errors).toContain('asset_issuer');
+  });
+
+  it('is not required when asset_code is absent', async () => {
+    const errors = await errorsFor({
+      asset_code: undefined,
+      asset_issuer: undefined,
+    });
+    expect(errors).not.toContain('asset_issuer');
   });
 });

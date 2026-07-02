@@ -9,11 +9,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import jwt from 'jsonwebtoken';
-import { TokenExpiredError, JsonWebTokenError } from 'jsonwebtoken';
 import * as crypto from 'crypto';
 import { Account } from '../../accounts/entities/account.entity.js';
 import { ClaimVerificationResponseDto } from '../dto/claim-verification-response.dto.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
+
+const { TokenExpiredError, JsonWebTokenError } = jwt;
 
 interface ClaimTokenPayload {
   publicKey: string;

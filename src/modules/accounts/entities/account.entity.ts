@@ -4,17 +4,33 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   Index,
 } from 'typeorm';
 import { AccountStatus } from '../enums/account-status.enum.js';
 
+/**
+ * Composite indexes mirror the indexes created in migration
+ * 1718100006000-AddHighTrafficIndexes.  They cover the two
+ * high-traffic scheduler queries:
+ *
+ *   • Expiry job   – WHERE status IN (…) AND expiresAt < NOW()
+ *   • Init cleanup – WHERE status = 'initializing' AND createdAt < <cutoff>
+ *
+ * Keeping the decorators here ensures TypeORM's schema-sync check
+ * (used in the integration test) stays green after the migration runs.
+ */
+@Index('IDX_accounts_status_expiresAt', ['status', 'expiresAt'])
+@Index('IDX_accounts_status_createdAt', ['status', 'createdAt'])
+@Index('IDX_accounts_createdAt', ['createdAt'])
+@Index('IDX_accounts_deletedAt', ['deletedAt'])
 @Entity('accounts')
 export class Account {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'varchar', length: 56, unique: true })
-  @Index()
+  @Index('IDX_accounts_publicKey')
   publicKey: string;
 
   @Column({ type: 'text' })
@@ -32,20 +48,21 @@ export class Account {
   @Column({
     type: 'enum',
     enum: AccountStatus,
+    enumName: 'account_status_enum',
     default: AccountStatus.PENDING_PAYMENT,
   })
-  @Index()
+  @Index('IDX_accounts_status')
   status: AccountStatus;
 
   @Column({ type: 'varchar', length: 64, nullable: true })
-  @Index()
+  @Index('IDX_accounts_claimTokenHash')
   claimTokenHash: string;
 
   @Column({ type: 'varchar', length: 56, nullable: true })
   destinationAddress: string;
 
   @Column({ type: 'timestamp' })
-  @Index()
+  @Index('IDX_accounts_expiresAt')
   expiresAt: Date; // Scheduled expiry time - set on creation, used by the expiry scheduler
 
   @CreateDateColumn()
@@ -64,6 +81,9 @@ export class Account {
   @Column({ type: 'timestamp', nullable: true })
   expiredAt: Date | null; // Actual time expiry was processed - set by the expiry handler, null until then
 
-  @Column({ type: 'jsonb', nullable: true })
+@Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
+
+  @DeleteDateColumn({ type: 'timestamp', nullable: true })
+  deletedAt: Date | null;
 }

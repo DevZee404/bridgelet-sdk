@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 
 import { AccountsModule } from './modules/accounts/accounts.module.js';
 import databaseConfig from './config/database.config.js';
@@ -13,12 +14,21 @@ import { HealthModule } from './modules/health/health.module.js';
 import { AppController } from './app.controller.js';
 import { AppService } from './app.service.js';
 import { SweepsModule } from './modules/sweeps/sweeps.module.js';
+import { SchedulerModule } from './modules/scheduler/scheduler.module.js';
+import { PaymentMonitorModule } from './modules/payment-monitor/payment-monitor.module.js';
+import { ClaimsModule } from './modules/claims/claims.module.js';
+import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
+import { CryptoModule } from './common/crypto/crypto.module.js';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       load: [databaseConfig, stellarConfig, appConfig],
+    }),
+    PrometheusModule.register({
+      path: '/metrics',
     }),
 
     // Database
@@ -35,13 +45,20 @@ import { SweepsModule } from './modules/sweeps/sweeps.module.js';
       },
     ]),
     AccountsModule,
-    // ClaimsModule,
+    ClaimsModule,
     SweepsModule,
-    // WebhooksModule,
+    PaymentMonitorModule,
+    WebhooksModule,
     StellarModule,
     HealthModule,
+    SchedulerModule,
+    CryptoModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
+  }
+}

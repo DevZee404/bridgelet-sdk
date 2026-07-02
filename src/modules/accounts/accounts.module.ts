@@ -7,6 +7,14 @@ import { StellarModule } from '../stellar/stellar.module.js';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PaymentMonitorProvider } from '../stellar/providers/payment-monitor-provider.js';
+import { WebhooksModule } from '../webhooks/webhooks.module.js';
+import { makeCounterProvider } from '@willsoto/nestjs-prometheus';
+import { AccountLatencyMetricsProvider } from './providers/account-latency-metrics.provider.js';
+
+const accountCreationCounter = makeCounterProvider({
+  name: 'account_creation_total',
+  help: 'Total number of accounts created',
+});
 
 @Module({
   imports: [
@@ -22,10 +30,16 @@ import { PaymentMonitorProvider } from '../stellar/providers/payment-monitor-pro
       inject: [ConfigService],
     }),
     StellarModule,
+    WebhooksModule,
   ],
   controllers: [AccountsController],
-  providers: [AccountsService, PaymentMonitorProvider],
-  exports: [AccountsService],
+  providers: [
+    AccountsService,
+    PaymentMonitorProvider,
+    AccountLatencyMetricsProvider,
+    accountCreationCounter,
+  ],
+  exports: [AccountsService, JwtModule],
 })
 
 // Note: seeing as PaymentMonitorPRovider is a sub provider in stellar service, this should be adjusted to fit that. Probably call stellatService.PaymentMonitorProvider in the constructor after wiring it up

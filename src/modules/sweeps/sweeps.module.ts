@@ -3,26 +3,32 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { SweepsService } from './sweeps.service.js';
 import { ValidationProvider } from './providers/validation.provider.js';
 import { ContractProvider } from './providers/contract.provider.js';
+import { TransactionProvider } from './providers/transaction.provider.js';
+import { SweepMetricsProvider } from './providers/sweep-metrics.provider.js';
 import { Account } from '../accounts/entities/account.entity.js';
+import { StellarModule } from '../stellar/stellar.module.js';
+import { makeCounterProvider } from '@willsoto/nestjs-prometheus';
+
+const sweepSuccessCounter = makeCounterProvider({
+  name: 'sweep_success_total',
+  help: 'Total number of successful sweeps',
+});
+const sweepFailureCounter = makeCounterProvider({
+  name: 'sweep_failure_total',
+  help: 'Total number of failed sweeps',
+});
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Account])],
-  providers: [SweepsService, ValidationProvider, ContractProvider],
+  imports: [TypeOrmModule.forFeature([Account]), StellarModule],
+  providers: [
+    SweepsService,
+    ValidationProvider,
+    ContractProvider,
+    TransactionProvider,
+    SweepMetricsProvider,
+    sweepSuccessCounter,
+    sweepFailureCounter,
+  ],
   exports: [SweepsService],
 })
 export class SweepsModule {}
-// Update src/config/stellar.config.ts
-import { registerAs } from '@nestjs/config';
-
-export default registerAs('stellar', () => ({
-  network: process.env.STELLAR_NETWORK ?? 'testnet',
-  horizonUrl:
-    process.env.STELLAR_HORIZON_URL ?? 'https://horizon-testnet.stellar.org',
-  sorobanRpcUrl:
-    process.env.STELLAR_SOROBAN_RPC_URL ??
-    'https://soroban-testnet.stellar.org',
-  fundingSecret: process.env.STELLAR_FUNDING_SECRET,
-  contracts: {
-    ephemeralAccount: process.env.EPHEMERAL_ACCOUNT_CONTRACT_ID,
-  },
-}));

@@ -90,9 +90,14 @@ export class TransactionProvider {
 
       this.logger.log(`Sweep transaction successful: ${result.hash}`);
 
+      const ledger = Number(result.ledger);
+
+      if (Number.isNaN(ledger)) {
+        throw new Error(`Invalid ledger value: ${result.ledger}`);
+      }
       return {
         hash: result.hash,
-        ledger: result.ledger,
+        ledger: ledger,
         successful: result.successful,
         timestamp: new Date(),
       };
