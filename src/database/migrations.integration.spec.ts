@@ -1,6 +1,5 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { AccountStatus } from '../modules/accounts/enums/account-status.enum.js';
 
 const execFileAsync = promisify(execFile);
 
