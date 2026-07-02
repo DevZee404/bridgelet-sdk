@@ -81,7 +81,7 @@ export class Account {
   @Column({ type: 'timestamp', nullable: true })
   expiredAt: Date | null; // Actual time expiry was processed - set by the expiry handler, null until then
 
-@Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, any>;
 
   @DeleteDateColumn({ type: 'timestamp', nullable: true })

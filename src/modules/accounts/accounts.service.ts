@@ -236,7 +236,7 @@ export class AccountsService {
     limit: number;
     offset: number;
   }): Promise<{ accounts: AccountResponseDto[]; total: number }> {
-   const query = this.accountsRepository
+    const query = this.accountsRepository
       .createQueryBuilder('account')
       .where('account.deletedAt IS NULL');
 

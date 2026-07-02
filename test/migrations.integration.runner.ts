@@ -128,7 +128,14 @@ async function main(): Promise<void> {
         log: () => Promise<SqlInMemoryLog>;
       }
     ).log();
-    console.error('DEBUG upQueries:', JSON.stringify(schemaLog.upQueries.map((q) => q.query), null, 2));
+    console.error(
+      'DEBUG upQueries:',
+      JSON.stringify(
+        (schemaLog.upQueries as Array<{ query: string }>).map((q) => q.query),
+        null,
+        2,
+      ),
+    );
 
     const enumRows: Array<{ enumlabel: string }> = await dataSource.query(`
       SELECT e.enumlabel
