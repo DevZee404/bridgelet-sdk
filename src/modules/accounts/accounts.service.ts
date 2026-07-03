@@ -177,6 +177,9 @@ export class AccountsService {
 
       // Both Horizon and contract succeeded — advance to real status
       account.status = AccountStatus.PENDING_PAYMENT;
+      account.contractId = this.configService.getOrThrow<string>(
+        'stellar.contracts.ephemeralAccount',
+      );
       await this.accountsRepository.save(account);
 
       await this.webhooksService.triggerEvent('account.created', {

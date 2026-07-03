@@ -33,6 +33,10 @@ export class Account {
   @Index('IDX_accounts_publicKey')
   publicKey: string;
 
+  @Column({ type: 'varchar', length: 56, nullable: true })
+  @Index('IDX_accounts_contractId')
+  contractId: string | null;
+
   @Column({ type: 'text' })
   secretKeyEncrypted: string;
 

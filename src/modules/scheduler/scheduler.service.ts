@@ -97,12 +97,17 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async expireAccount(account: Account): Promise<void> {
-    const contractId = this.configService.getOrThrow<string>(
-      'stellar.contracts.ephemeralAccount',
-    );
+    const contractId = account.contractId;
     const signerSecret = this.configService.getOrThrow<string>(
       'stellar.fundingSecret',
     );
+
+    if (!contractId) {
+      this.logger.error(
+        `expireAccount() skipped for account ${account.id}: contractId is null`,
+      );
+      return;
+    }
 
     try {
       await this.stellarService.expireAccount({ contractId, signerSecret });
