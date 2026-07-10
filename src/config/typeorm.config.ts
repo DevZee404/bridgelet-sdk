@@ -1,6 +1,7 @@
 import { DataSource } from 'typeorm';
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
+import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -29,7 +30,7 @@ export default new DataSource({
   database: process.env.DATABASE_NAME || 'bridgelet',
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
   migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
-  // Connection pool settings (see rationale above)
+  migrationsTransactionMode: 'each',
   poolSize: 10,
   extra: {
     min: 2,

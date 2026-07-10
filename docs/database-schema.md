@@ -45,15 +45,16 @@ Settings are passed to the underlying `pg` Pool constructor via the TypeORM `ext
 
 ### accounts
 
-| Index name                      | Columns               | Query served                                                                                             |
-| ------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------- |
-| `IDX_accounts_publicKey`        | `publicKey`           | Account lookup by Stellar public key                                                                     |
-| `IDX_accounts_status`           | `status`              | Status-filtered API list (`GET /accounts?status=…`)                                                      |
-| `IDX_accounts_claimTokenHash`   | `claimTokenHash`      | Token redemption lookup                                                                                  |
-| `IDX_accounts_expiresAt`        | `expiresAt`           | Range scans on expiry timestamp                                                                          |
-| `IDX_accounts_status_expiresAt` | `status`, `expiresAt` | Expiry scheduler: `WHERE status IN (…) AND expiresAt < NOW()` — composite eliminates the bitmap AND step |
-| `IDX_accounts_status_createdAt` | `status`, `createdAt` | INITIALIZING cleanup: `WHERE status = 'initializing' AND createdAt < <cutoff>`                           |
-| `IDX_accounts_createdAt`        | `createdAt`           | Audit / time-boxed reporting range scans                                                                 |
+| Index name                      | Columns               | Query served                                                                                                                      |
+| ------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `IDX_accounts_publicKey`        | `publicKey`           | Account lookup by Stellar public key                                                                                              |
+| contractId                      | varchar(56), nullable | Stellar contract ID of the ephemeral account, set once Horizon + contract creation succeed (`stellar.contracts.ephemeralAccount`) |
+| `IDX_accounts_status`           | `status`              | Status-filtered API list (`GET /accounts?status=…`)                                                                               |
+| `IDX_accounts_claimTokenHash`   | `claimTokenHash`      | Token redemption lookup                                                                                                           |
+| `IDX_accounts_expiresAt`        | `expiresAt`           | Range scans on expiry timestamp                                                                                                   |
+| `IDX_accounts_status_expiresAt` | `status`, `expiresAt` | Expiry scheduler: `WHERE status IN (…) AND expiresAt < NOW()` — composite eliminates the bitmap AND step                          |
+| `IDX_accounts_status_createdAt` | `status`, `createdAt` | INITIALIZING cleanup: `WHERE status = 'initializing' AND createdAt < <cutoff>`                                                    |
+| `IDX_accounts_createdAt`        | `createdAt`           | Audit / time-boxed reporting range scans                                                                                          |
 
 ### claims
 

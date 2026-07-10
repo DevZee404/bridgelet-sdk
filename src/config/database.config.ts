@@ -3,6 +3,7 @@ import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { dirname } from 'path';
 import { DataSource } from 'typeorm';
 import { fileURLToPath } from 'url';
+import 'dotenv/config';
 
 /**
  * Connection pool rationale
@@ -37,13 +38,13 @@ export default registerAs(
       database: process.env.DATABASE_NAME || 'bridgelet',
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
       migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
-      synchronize: process.env.DATABASE_SYNC === 'true',
+      synchronize: process.env.DATABASE_SYNC === 'false',
       autoLoadEntities: true,
       logging: process.env.DATABASE_LOGGING === 'true',
-      ssl:
-        process.env.DATABASE_SSL === 'true'
-          ? { rejectUnauthorized: false }
-          : false,
+      // ssl:
+      //   process.env.DATABASE_SSL === 'true'
+      //     ? { rejectUnauthorized: false }
+      //     : false,
       // Connection pool (see rationale above)
       poolSize: POOL_CONFIG.max,
       extra: POOL_CONFIG,
