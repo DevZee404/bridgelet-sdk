@@ -1,12 +1,13 @@
 import './tracing.js';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
 import { PinoLoggerService } from './common/logger/pino-logger.service.js';
 
 async function bootstrap() {
-  const logger = new PinoLoggerService();
+  const isProduction = process.env.NODE_ENV === 'production';
+  const logger = isProduction ? new PinoLoggerService() : undefined;
   const app = await NestFactory.create(AppModule, { logger });
 
   app.useGlobalPipes(
@@ -34,11 +35,9 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   void app.listen(port);
 
-  logger.log(`Bridgelet SDK running on http://localhost:${port}`, 'Bootstrap');
-  logger.log(
-    `API Documentation: http://localhost:${port}/api/docs`,
-    'Bootstrap',
-  );
+  const bootstrapLogger = new Logger('Bootstrap');
+  bootstrapLogger.log(`Bridgelet SDK running on http://localhost:${port}`);
+  bootstrapLogger.log(`API Documentation: http://localhost:${port}/api/docs`);
 }
 
 bootstrap().catch(console.error);

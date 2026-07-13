@@ -142,6 +142,7 @@ export class StellarService {
           StellarSdk.Address.fromString(
             params.sweepControllerContractId,
           ).toScVal(), // authorized_controller
+          StellarSdk.Address.fromString(fundingKeypair.publicKey()).toScVal(),
         ),
       )
       .setTimeout(30)

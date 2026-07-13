@@ -70,7 +70,7 @@ describe('stellar.config', () => {
     delete process.env.STELLAR_NETWORK;
     delete process.env.STELLAR_HORIZON_URL;
     delete process.env.STELLAR_SOROBAN_RPC_URL;
-    delete process.env.STELLAR_SWEEP_CONTROLLER_CONTRACT_ID;
+    delete process.env.SWEEP_CONTROLLER_CONTRACT_ID;
     delete process.env.SWEEP_SIGNING_KEY_SEED;
     delete process.env.ENCRYPTION_KEY;
   });
