@@ -9,9 +9,11 @@ per-integrator revocation).
 ## The gap
 
 `JwtAuthGuard` (`src/common/guards/jwt-auth.guard.ts`) does this and nothing more:
+
 ```ts
 await this.jwtService.verifyAsync(token);
 ```
+
 No claim is inspected. No `sub`, no scope, no integrator identity. Two tokens
 signed with the same `JWT_SECRET` are functionally identical, regardless of
 payload.
@@ -19,15 +21,17 @@ payload.
 ## Two options
 
 ### Option A - Scoped JWTs (claims-based)
+
 Add an `integratorId` (or `sub`) claim when minting a token, and have the
 guard extract + attach it to the request. Services filter queries by it.
 
 **Pros:** stays JWT-based, no new storage for the credential itself, easy to
 add short expiry/rotation later.
-**Cons:** still need *somewhere* to mint these - either an admin-only
+**Cons:** still need _somewhere_ to mint these - either an admin-only
 endpoint, or continue doing it out-of-band (script/CLI) per integrator.
 
 ### Option B - Per-integrator API keys (recommended for this app's shape)
+
 Store a hashed API key per integrator in the DB; a new guard looks up the
 key, attaches `integratorId` to the request.
 
@@ -44,6 +48,7 @@ secret for everyone).
 ## Minimal sketch (Option B)
 
 **New table:**
+
 ```sql
 CREATE TABLE integrators (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -55,6 +60,7 @@ CREATE TABLE integrators (
 ```
 
 **New guard**, alongside the existing `JwtAuthGuard`:
+
 ```ts
 // api-key-auth.guard.ts - reads X-API-Key header, hashes it, looks up
 // integrators row, rejects if missing/disabled, attaches integratorId to
@@ -62,11 +68,13 @@ CREATE TABLE integrators (
 ```
 
 **Touch points once this exists:**
+
 - `AccountsController` - swap `JwtAuthGuard` for the new guard (or support both, if internal admin tooling should stay on JWT).
 - `AccountsService.findAll` / `create` - add `WHERE integrator_id = :integratorId` filtering, and stamp new accounts with the caller's `integratorId`.
 - Admin-only bootstrap: a one-off script or protected endpoint to create the first `integrators` row and hand out the raw key exactly once (never retrievable again - only the hash is stored).
 
 ## Not in scope for the minimal version
+
 - Per-integrator rate limiting (would layer on top of the existing `ThrottlerGuard`)
 - Key rotation UI/endpoint (manual DB update is fine to start)
 - Scoped permissions beyond "own accounts only" (e.g. read-only keys)

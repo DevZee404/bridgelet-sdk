@@ -21,6 +21,7 @@ capability already exists and works — nothing in `bridgelet-core` needs to
 change.
 
 **Sketch:**
+
 - Add `ACCOUNT_FACTORY_CONTRACT_ID` to `.env.example` and `stellar.config.ts` (`contracts.accountFactory`).
 - New endpoint, e.g. `POST /accounts/batch`, accepting an array of the same
   fields `CreateAccountDto` takes today.
@@ -77,6 +78,7 @@ audit.
 ---
 
 ## Suggested priority
+
 AccountFactory (self-contained, backend-only, clear use case) before
 ReserveContract (cross-repo, touches fund-safety math, no concrete driving
 need yet).
