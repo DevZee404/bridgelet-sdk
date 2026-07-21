@@ -4,7 +4,7 @@ import { AccountsService } from './accounts.service.js';
 import { AccountStatus } from './enums/account-status.enum.js';
 import { CreateAccountDto } from './dto/create-account.dto.js';
 import { AccountResponseDto } from './dto/account-response.dto.js';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
+import { ApiKeyAuthGuard } from '../../common/guards/api-key-auth.guard.js';
 import { ThrottlerGuard } from '@nestjs/throttler';
 
 const VALID_KEY = 'G' + 'A'.repeat(55);
@@ -40,7 +40,7 @@ describe('AccountsController', () => {
       controllers: [AccountsController],
       providers: [{ provide: AccountsService, useValue: mockAccountsService }],
     })
-      .overrideGuard(JwtAuthGuard)
+      .overrideGuard(ApiKeyAuthGuard)
       .useValue({ canActivate: () => true })
       .overrideGuard(ThrottlerGuard)
       .useValue({ canActivate: () => true })
@@ -54,7 +54,9 @@ describe('AccountsController', () => {
       const dto: CreateAccountDto = {
         fundingSource: VALID_KEY,
         amount: '100',
-        asset: 'native',
+        recovery_address:
+          'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
+        asset_code: 'native',
         expiresIn: 3600,
       };
       const response = makeResponse();

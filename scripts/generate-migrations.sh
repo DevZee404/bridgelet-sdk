@@ -561,5 +561,35 @@ export class CreateClaimAuditLogTable1718100008000 implements MigrationInterface
 }
 MIGRATION_EOF
 
-echo "Done. Wrote 11 migration files to $MIGRATIONS_DIR."
+cat > "$MIGRATIONS_DIR/1718100009000-CreateIntegratorsTable.ts" <<'MIGRATION_EOF'
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+export class CreateIntegratorsTable1718100009000 implements MigrationInterface {
+  name = 'CreateIntegratorsTable1718100009000';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE "integrators" (
+        "id"          uuid        NOT NULL DEFAULT gen_random_uuid(),
+        "name"        text        NOT NULL,
+        "apiKeyHash"  text        NOT NULL,
+        "createdAt"   TIMESTAMPTZ NOT NULL DEFAULT now(),
+        "disabledAt"  TIMESTAMPTZ,
+        CONSTRAINT "UQ_integrators_apiKeyHash" UNIQUE ("apiKeyHash"),
+        CONSTRAINT "PK_integrators" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_integrators_apiKeyHash" ON "integrators" ("apiKeyHash")`,
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP INDEX "IDX_integrators_apiKeyHash"`);
+    await queryRunner.query(`DROP TABLE "integrators"`);
+  }
+}
+MIGRATION_EOF
+
+echo "Done. Wrote 12 migration files to $MIGRATIONS_DIR."
 echo "Run 'npm run migration:run' to apply them, or 'npm run migration:show' to check status."
