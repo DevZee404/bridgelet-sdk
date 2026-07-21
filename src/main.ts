@@ -28,6 +28,7 @@ async function bootstrap() {
     .setDescription('Ephemeral account management API for Stellar')
     .setVersion('0.1.0')
     .addBearerAuth()
+    .addApiKey({ type: 'apiKey', name: 'X-API-Key', in: 'header' }, 'X-API-Key')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);

@@ -1,10 +1,13 @@
-# Future Feature: Per-Integrator Auth Scoping
+# Per-Integrator Auth Scoping
 
-**Status:** Not implemented. Current `JwtAuthGuard` only verifies signature validity -
-any validly-signed JWT gets full access to every account in the system via
-`GET /accounts` and `POST /accounts`. Fine for a single internal caller;
-becomes a real problem with multiple integrators (no data isolation, no
-per-integrator revocation).
+**Status:** Implemented (Option B — per-integrator API keys). See
+`src/modules/integrators/`, `src/common/guards/api-key-auth.guard.ts`, and
+`src/scripts/create-integrator.ts`. `AccountsController` now requires the
+`X-API-Key` header instead of a Bearer JWT; `JwtAuthGuard` remains in use on
+`WebhooksController` only.
+
+The original scoping notes below are kept for context on why Option B was
+chosen over Option A (scoped JWTs).
 
 ## The gap
 
@@ -78,3 +81,8 @@ CREATE TABLE integrators (
 - Per-integrator rate limiting (would layer on top of the existing `ThrottlerGuard`)
 - Key rotation UI/endpoint (manual DB update is fine to start)
 - Scoped permissions beyond "own accounts only" (e.g. read-only keys)
+- **Data isolation** — `request.integratorId` is attached by the guard but
+  `AccountsService.create`/`findAll` do not yet filter or stamp by it. Every
+  valid API key currently sees every account, same as the old JWT guard did.
+  Tracked as a fast-follow; the guard/table/key-issuing plumbing is in place
+  so this is now a service-layer change, not an auth-layer one.

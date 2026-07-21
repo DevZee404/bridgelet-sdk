@@ -26,7 +26,8 @@
     "migration:run": "npm run typeorm -- migration:run -d src/config/typeorm.config.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d src/config/typeorm.config.ts",
     "migration:show": "npm run typeorm -- migration:show -d src/config/typeorm.config.ts",
-    "migrate:secrets": "ts-node --esm src/scripts/migrate-secrets.ts"
+    "migrate:secrets": "ts-node --esm src/scripts/migrate-secrets.ts",
+    "create:integrator": "ts-node --esm src/scripts/create-integrator.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "3.1075.0",

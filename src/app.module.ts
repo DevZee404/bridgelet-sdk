@@ -18,6 +18,7 @@ import { SchedulerModule } from './modules/scheduler/scheduler.module.js';
 import { PaymentMonitorModule } from './modules/payment-monitor/payment-monitor.module.js';
 import { ClaimsModule } from './modules/claims/claims.module.js';
 import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
+import { IntegratorsModule } from './modules/integrators/integrators.module.js';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
 import { CryptoModule } from './common/crypto/crypto.module.js';
 
@@ -49,6 +50,7 @@ import { CryptoModule } from './common/crypto/crypto.module.js';
     SweepsModule,
     PaymentMonitorModule,
     WebhooksModule,
+    IntegratorsModule,
     StellarModule,
     HealthModule,
     SchedulerModule,
