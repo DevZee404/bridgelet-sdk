@@ -94,6 +94,9 @@ src/
 │   └── filters/         # Exception filters
 ├── config/              # Environment configuration
 └── database/            # Migrations, entities
+
+scripts/
+└── generate-migrations.sh  # Regenerates src/database/migrations/ from scratch
 ```
 
 ## Installation
@@ -109,16 +112,36 @@ cp .env.example .env
 # Run database migrations
 # DataSource config : src/config/typeorm.config.ts
 # Migrations        : src/database/migrations/
-#   1718100000000-CreateAccountsTable           (accounts table, status enum, expiredAt, metadata)
-#   1718100001000-CreateClaimsTable              (claims table + FK to accounts)
-#   1718100002000-AddInitializingToAccountStatus (adds INITIALIZING to account_status enum)
-#   1718100003000-CreateWebhooksTable            (webhooks table)
-#   1718100004000-AddClaimingToAccountStatus     (adds CLAIMING to account_status enum)
+#   1718100000000-CreateAccountsTable              (accounts table, status enum, expiredAt, metadata)
+#   1718100001000-CreateClaimsTable                (claims table + FK to accounts)
+#   1718100002000-AddInitializingToAccountStatus   (adds INITIALIZING to account_status enum)
+#   1718100003000-CreateWebhooksTable              (webhooks table)
+#   1718100004000-AddClaimingToAccountStatus       (adds CLAIMING to account_status enum)
+#   1718100005000-CreateWebhookDeliveriesTable     (webhook delivery attempt log table)
+#   1718100006000-AddHighTrafficIndexes            (accounts composite and range indexes)
+#   1718100007000-CreateContractEventsTable        (Soroban contract event index table)
+#   1718100008000-AddDeletedAtToAccountsTable      (soft-delete column + index on accounts)
+#   1718100008000-AddPartialSweepToAccountStatus   (adds PARTIAL_SWEEP to account_status enum)
+#   1718100008000-CreateClaimAuditLogTable         (claim attempt audit log table)
 npm run migration:run
 
 # Start development server
 npm run start:dev
 ```
+
+### Regenerating the migrations folder
+
+`src/database/migrations/` is scripted rather than hand-maintained. `scripts/generate-migrations.sh` deletes the folder and rewrites every file listed above verbatim, so the folder on disk is always reproducible from the script instead of relying on files someone created by hand.
+
+```bash
+# Recreate src/database/migrations/ from the script (prompts for confirmation)
+./scripts/generate-migrations.sh
+
+# Same, but skip the confirmation prompt (useful in CI)
+./scripts/generate-migrations.sh --yes
+```
+
+This does **not** apply migrations to a database — it only (re)writes the `.ts` files. Run `npm run migration:run` afterwards as usual. See [`CONTRIBUTING.md`](./CONTRIBUTING.md#database-migrations) for the workflow to follow when adding a _new_ migration.
 
 ## Tests
 
@@ -142,7 +165,7 @@ npm run test:cov
 
 Coverage reports are generated in the `coverage/` directory. The build will fail if any metric (branches, functions, lines, statements) falls below 80%.
 
-The repository also includes an embedded-Postgres integration test in `src/database/migrations.integration.spec.ts` that starts a fresh PostgreSQL instance, runs all current migrations, verifies the resulting schema matches the TypeORM entities, checks the `account_status_enum` values, and confirms the `claims.accountId -> accounts.id` foreign key is enforced.
+The repository also includes an embedded-Postgres integration test in `src/database/migrations.integration.spec.ts` that starts a fresh PostgreSQL instance, runs all current migrations, verifies the resulting schema matches the TypeORM entities, checks the `account_status_enum` values, confirms the `claims.accountId -> accounts.id` and `webhook_deliveries.subscription_id -> webhooks.id` foreign keys are enforced, verifies the high-traffic `accounts` indexes added by migration `1718100006000`, and verifies the `contract_events` table shape.
 
 To check coverage for a specific file:
 
@@ -188,6 +211,8 @@ POST /claims/initiate # Generate claim token
 POST /claims/redeem # Redeem claim and sweep
 GET /webhooks # List webhook subscriptions
 POST /webhooks # Subscribe to events
+PUT /webhooks/:id # Update webhook subscription (e.g. URL, events)
+DELETE /webhooks/:id # Delete webhook subscription
 
 ## Database Schema
 

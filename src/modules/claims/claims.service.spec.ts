@@ -6,6 +6,7 @@ import { ClaimRedemptionProvider } from './providers/claim-redemption.provider.j
 import { ClaimDetailsDto } from './dto/claim-details.dto.js';
 import { ClaimVerificationResponseDto } from './dto/claim-verification-response.dto.js';
 import { ClaimRedemptionResponseDto } from './dto/claim-redemption-response.dto.js';
+import { getToken } from '@willsoto/nestjs-prometheus';
 
 /**
  * Integration Tests for ClaimsService
@@ -90,6 +91,10 @@ describe('ClaimsService Integration Tests', () => {
         {
           provide: ClaimRedemptionProvider,
           useValue: claimRedemptionProvider,
+        },
+        {
+          provide: getToken('claim_redemption_total'),
+          useValue: { inc: jest.fn() },
         },
       ],
     }).compile();

@@ -5,6 +5,8 @@ import { ClaimDetailsDto } from './dto/claim-details.dto.js';
 import { ClaimVerificationResponseDto } from './dto/claim-verification-response.dto.js';
 import { ClaimRedemptionProvider } from './providers/claim-redemption.provider.js';
 import { ClaimRedemptionResponseDto } from './dto/claim-redemption-response.dto.js';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Counter } from 'prom-client';
 
 @Injectable()
 export class ClaimsService {
@@ -12,6 +14,8 @@ export class ClaimsService {
     private readonly claimLookupProvider: ClaimLookupProvider,
     private readonly tokenVerificationProvider: TokenVerificationProvider,
     private claimRedemptionProvider: ClaimRedemptionProvider,
+    @InjectMetric('claim_redemption_total')
+    private readonly claimRedemptionCounter: Counter<string>,
   ) {}
 
   public async findClaimById(id: string): Promise<ClaimDetailsDto> {
@@ -27,6 +31,7 @@ export class ClaimsService {
     token: string,
     destinationAddress: string,
   ): Promise<ClaimRedemptionResponseDto> {
+    this.claimRedemptionCounter.inc();
     return this.claimRedemptionProvider.redeemClaim(token, destinationAddress);
   }
 }

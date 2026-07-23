@@ -11,7 +11,6 @@ import {
 import { Account } from '../../accounts/entities/account.entity.js';
 
 @Entity('claims')
-// @Index(['accountId'])
 export class Claim {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -23,6 +22,7 @@ export class Claim {
   @ManyToOne(() => Account, { eager: false, onDelete: 'CASCADE' })
   @JoinColumn({
     name: 'accountId',
+    referencedColumnName: 'id',
     foreignKeyConstraintName: 'FK_claims_accountId',
   })
   account: Account;

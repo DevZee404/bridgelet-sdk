@@ -1,5 +1,11 @@
 import { Controller, Get, Param, Post, Body, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags, ApiParam } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiParam,
+  ApiBody,
+} from '@nestjs/swagger';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ClaimsService } from './claims.service.js';
 import { ClaimDetailsDto } from './dto/claim-details.dto.js';
@@ -44,6 +50,7 @@ export class ClaimsController {
     status: 400,
     description: 'Account has not received payment or invalid request',
   })
+  @ApiBody({ type: VerifyClaimDto })
   public async verifyClaim(
     @Body() verifyClaimDto: VerifyClaimDto,
   ): Promise<ClaimVerificationResponseDto> {
@@ -62,6 +69,7 @@ export class ClaimsController {
   @ApiResponse({ status: 401, description: 'Invalid or expired token' })
   @ApiResponse({ status: 400, description: 'Invalid destination address' })
   @ApiResponse({ status: 409, description: 'Claim already redeemed' })
+  @ApiBody({ type: RedeemClaimDto })
   public async redeem(
     @Body() redeemClaimDto: RedeemClaimDto,
   ): Promise<ClaimRedemptionResponseDto> {

@@ -16,6 +16,7 @@ const makeAccount = (overrides: Partial<Account> = {}): Account =>
   ({
     id: 'acc-uuid-1',
     publicKey: 'GPUBKEY1234',
+    contractId: 'CONTRACT123',
     status: AccountStatus.PENDING_PAYMENT,
     secretKeyEncrypted: 'enc',
     fundingSource: 'GFUNDING',
@@ -23,11 +24,12 @@ const makeAccount = (overrides: Partial<Account> = {}): Account =>
     asset: 'USDC',
     claimTokenHash: null,
     destinationAddress: null,
-    expiresAt: new Date(Date.now() - 60_000), // expired 1 minute ago
-    createdAt: new Date(Date.now() - 3_600_000), // created 1 hour ago
+    expiresAt: new Date(Date.now() - 60_000),
+    createdAt: new Date(Date.now() - 3_600_000),
     updatedAt: new Date(),
     claimedAt: null,
     expiredAt: null,
+    deletedAt: null,
     metadata: null,
     ...overrides,
   }) as Account;
@@ -61,7 +63,6 @@ describe('SchedulerService', () => {
     const configMock = {
       getOrThrow: jest.fn((key: string) => {
         const map: Record<string, string> = {
-          'stellar.contracts.ephemeralAccount': 'CONTRACT123',
           'stellar.fundingSecret': 'SFUNDING_SECRET',
         };
         if (!(key in map)) throw new Error(`Config key not found: ${key}`);
@@ -334,7 +335,7 @@ describe('SchedulerService', () => {
     it('handles null metadata gracefully', async () => {
       const account = makeAccount({
         status: AccountStatus.INITIALIZING,
-        metadata: null,
+        metadata: null as unknown as Record<string, any> | undefined,
       });
       accountsRepo.find.mockResolvedValueOnce([account]);
 

@@ -11,8 +11,9 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiSecurity,
   ApiQuery,
+  ApiBody,
 } from '@nestjs/swagger';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { AccountsService } from './accounts.service.js';
@@ -20,12 +21,12 @@ import { CreateAccountDto } from './dto/create-account.dto.js';
 import { AccountResponseDto } from './dto/account-response.dto.js';
 import { AccountsListResponseDto } from './dto/accounts-list-response.dto.js';
 import { AccountStatus } from './enums/account-status.enum.js';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
+import { ApiKeyAuthGuard } from '../../common/guards/api-key-auth.guard.js';
 
 @ApiTags('accounts')
-@ApiBearerAuth()
+@ApiSecurity('X-API-Key')
 @Controller('accounts')
-@UseGuards(ThrottlerGuard, JwtAuthGuard)
+@UseGuards(ThrottlerGuard, ApiKeyAuthGuard)
 export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 
@@ -50,6 +51,7 @@ export class AccountsController {
     description:
       'Rate limit exceeded — requests are throttled to protect funding flows',
   })
+  @ApiBody({ type: CreateAccountDto })
   public async create(
     @Body() createAccountDto: CreateAccountDto,
   ): Promise<AccountResponseDto> {

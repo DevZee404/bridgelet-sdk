@@ -1,9 +1,8 @@
-﻿import { TransactionHashValidator } from './transaction-hash.validator.js';
+import { TransactionHashValidator } from './transaction-hash.validator.js';
 
 describe('TransactionHashValidator', () => {
   const validHash =
     '571a84bc59fefb3fd17fe167b9c76286e83c31972649441a2d09da87f5b997a7';
-
   describe('isValid', () => {
     it('returns true for a valid 64-char hex hash', () => {
       expect(TransactionHashValidator.isValid(validHash)).toBe(true);

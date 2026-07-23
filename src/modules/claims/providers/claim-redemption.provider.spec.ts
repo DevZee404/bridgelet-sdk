@@ -10,6 +10,8 @@ import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
 import { ConfigService } from '@nestjs/config';
 import { SecretEncryptionUtil } from '../../../common/crypto/secret-encryption.util.js';
 import { WebhooksService } from '../../webhooks/webhooks.service.js';
+import { ClaimAuditProvider } from './claim-audit.provider.js';
+import { KmsKeyProvider } from '../../../common/crypto/kms-key.provider.js';
 
 describe('ClaimRedemptionProvider', () => {
   let provider: ClaimRedemptionProvider;
@@ -76,6 +78,7 @@ describe('ClaimRedemptionProvider', () => {
     const qb = {
       setLock: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
       getOne: jest.fn().mockResolvedValue(lockedAccount),
     };
     return {
@@ -142,6 +145,16 @@ describe('ClaimRedemptionProvider', () => {
           },
         },
         { provide: WebhooksService, useValue: mockWebhooksService },
+        {
+          provide: ClaimAuditProvider,
+          useValue: { record: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: KmsKeyProvider,
+          useValue: {
+            getEncryptionKey: jest.fn().mockReturnValue('a'.repeat(64)),
+          },
+        },
       ],
     }).compile();
 
@@ -150,6 +163,14 @@ describe('ClaimRedemptionProvider', () => {
   }
 
   beforeEach(async () => {
+    // Reset mutable values on the shared mockAccount so a previous test's
+    // `locked.status = AccountStatus.CLAIMING` mutation does not leak into
+    // subsequent tests (the shared reference is locked, then mutated by
+    // redeemClaim's transaction body).
+    mockAccount.status = AccountStatus.PENDING_CLAIM;
+    mockAccount.destinationAddress = '';
+    mockAccount.claimedAt = null;
+
     const ds = makeHappyPathDataSource();
     provider = await buildModule(ds);
 
@@ -211,6 +232,8 @@ describe('ClaimRedemptionProvider', () => {
         destinationAddress: VALID_DESTINATION,
         amount: mockAccount.amount,
         asset: mockAccount.asset,
+        // Fresh PENDING_CLAIM attempt -> contract auth must run.
+        skipContractAuth: false,
       });
     });
 
@@ -347,6 +370,211 @@ describe('ClaimRedemptionProvider', () => {
       await expect(
         p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
       ).rejects.toThrow('Stellar network error');
+    });
+  });
+
+  describe('redeemClaim - propagates TokenVerification errors (issue #167)', () => {
+    it('rethrows BadRequestException when token is expired', async () => {
+      mockTokenVerificationProvider.verifyClaimToken.mockRejectedValue(
+        new BadRequestException('Token has expired'),
+      );
+
+      await expect(
+        provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rethrows BadRequestException when token does not match the requested account', async () => {
+      mockTokenVerificationProvider.verifyClaimToken.mockRejectedValue(
+        new BadRequestException('Token does not match the requested account'),
+      );
+
+      await expect(
+        provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rethrows BadRequestException for malformed JWT', async () => {
+      mockTokenVerificationProvider.verifyClaimToken.mockRejectedValue(
+        new BadRequestException('jwt malformed'),
+      );
+
+      await expect(
+        provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // ========================================================================
+  // Partial-sweep path (issue #169): when SweepsService.executeSweep returns
+  // isPartial=true the orchestrator transitions the account to PARTIAL_SWEEP,
+  // records an audit entry with outcome='partial', fires a sweep.partial
+  // webhook, and returns a structured non-error response so callers can
+  // retry with the same token (the second attempt passes skipContractAuth
+  // because the contract is already in Swept state).
+  // ========================================================================
+  describe('redeemClaim - partial sweep path', () => {
+    it('accepts PARTIAL_SWEEP entry and passes skipContractAuth=true to executeSweep', async () => {
+      const partialAccount = {
+        ...mockAccount,
+        status: AccountStatus.PARTIAL_SWEEP,
+      };
+      const ds = {
+        transaction: jest
+          .fn()
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) =>
+              cb(makeManager(partialAccount)),
+          ),
+      };
+      const p = await buildModule(ds);
+      // Return a partial result so redeemClaim never enters the success
+      // path (which would need a 2nd transaction we have not mocked).
+      mockSweepsService.executeSweep.mockResolvedValueOnce({
+        success: false,
+        isPartial: true,
+        contractAuthHash: 'partial-auth-hash',
+        amountSwept: mockAccount.amount,
+        destination: VALID_DESTINATION,
+        error: 'Horizon offline',
+      });
+
+      await p.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
+
+      expect(mockSweepsService.executeSweep).toHaveBeenCalledWith(
+        expect.objectContaining({ skipContractAuth: true }),
+      );
+    });
+
+    it('passes skipContractAuth=false for a fresh PENDING_CLAIM attempt', async () => {
+      const ds = makeHappyPathDataSource();
+      const p = await buildModule(ds);
+      mockSweepsService.executeSweep.mockResolvedValueOnce(mockSweepResult);
+
+      await p.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
+
+      expect(mockSweepsService.executeSweep).toHaveBeenCalledWith(
+        expect.objectContaining({ skipContractAuth: false }),
+      );
+    });
+
+    it('returns success:false, isPartial:true and transitions account to PARTIAL_SWEEP when sweeper signals partial', async () => {
+      const ds = {
+        transaction: jest
+          .fn()
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) =>
+              cb(makeManager(mockAccount)),
+          ),
+      };
+      const p = await buildModule(ds);
+      const partialResult = {
+        success: false,
+        isPartial: true,
+        contractAuthHash: 'partial-auth-hash',
+        amountSwept: '100.0000000',
+        destination: VALID_DESTINATION,
+        error: 'Horizon offline',
+      };
+      mockSweepsService.executeSweep.mockResolvedValueOnce(partialResult);
+
+      const result = await p.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
+
+      expect(result.success).toBe(false);
+      expect(result.isPartial).toBe(true);
+      expect(result.contractAuthHash).toBe('partial-auth-hash');
+      expect(result.error).toBe('Horizon offline');
+      expect((result as { message?: string }).message).toMatch(
+        /partial|Retry/i,
+      );
+
+      // The account must be reverted to PARTIAL_SWEEP, not PENDING_CLAIM.
+      expect(mockAccountsRepository.update).toHaveBeenCalledWith(
+        mockAccount.id,
+        expect.objectContaining({
+          status: AccountStatus.PARTIAL_SWEEP,
+          destinationAddress: '',
+        }),
+      );
+    });
+
+    it('emits a sweep.partial webhook with the auth hash and error on partial outcome', async () => {
+      const ds = {
+        transaction: jest
+          .fn()
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) =>
+              cb(makeManager(mockAccount)),
+          ),
+      };
+      const p = await buildModule(ds);
+      const partialResult = {
+        success: false,
+        isPartial: true,
+        contractAuthHash: 'partial-auth-hash',
+        amountSwept: '100.0000000',
+        destination: VALID_DESTINATION,
+        error: 'Horizon offline',
+      };
+      mockSweepsService.executeSweep.mockResolvedValueOnce(partialResult);
+
+      await p.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
+
+      expect(mockWebhooksService.triggerEvent).toHaveBeenCalledWith(
+        'sweep.partial',
+        expect.objectContaining({
+          accountId: mockAccount.id,
+          error: 'Horizon offline',
+          contractAuthHash: 'partial-auth-hash',
+        }),
+      );
+    });
+
+    it('on sweep failure (throw) leaves the account in PARTIAL_SWEEP if it entered as PARTIAL_SWEEP', async () => {
+      const partialAccount = {
+        ...mockAccount,
+        status: AccountStatus.PARTIAL_SWEEP,
+      };
+      const ds = {
+        transaction: jest
+          .fn()
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) =>
+              cb(makeManager(partialAccount)),
+          ),
+      };
+      const p = await buildModule(ds);
+      // Sweeper throws (NOT a structured isPartial).
+      mockSweepsService.executeSweep.mockRejectedValueOnce(
+        new Error('Contract invoke failed inside skip path'),
+      );
+
+      await expect(
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow('Contract invoke failed');
+
+      // The revert path must preserve the PARTIAL_SWEEP invariant.
+      expect(mockAccountsRepository.update).toHaveBeenCalledWith(
+        mockAccount.id,
+        expect.objectContaining({ status: AccountStatus.PARTIAL_SWEEP }),
+      );
+    });
+
+    it('on sweep failure (throw) reverts a fresh PENDING_CLAIM attempt back to PENDING_CLAIM', async () => {
+      const ds = makeHappyPathDataSource();
+      const p = await buildModule(ds);
+      mockSweepsService.executeSweep.mockRejectedValueOnce(
+        new Error('Network blip'),
+      );
+
+      await expect(
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow('Network blip');
+
+      expect(mockAccountsRepository.update).toHaveBeenCalledWith(
+        mockAccount.id,
+        expect.objectContaining({ status: AccountStatus.PENDING_CLAIM }),
+      );
     });
   });
 });

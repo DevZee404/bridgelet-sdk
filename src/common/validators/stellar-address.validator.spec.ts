@@ -9,7 +9,6 @@ describe('StellarAddressValidator', () => {
   const wrongLength = 'GDV3BRGE2BXK5JMGAEDGE5QWAY2DBK5V2KEG762Y5GH4LPC5RSPRPTT'; // Too short
   const invalidChecksum =
     'GDV3BRGE2BXK5JMGAEDGE5QWAY2DBK5V2KEG762Y5GH4LPC5RSPRPTTA'; // Tampered last char
-
   describe('isValid', () => {
     it('should return true for a valid address', () => {
       expect(StellarAddressValidator.isValid(validAddress)).toBe(true);
