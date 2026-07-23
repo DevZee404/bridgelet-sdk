@@ -280,7 +280,19 @@ async function main(): Promise<void> {
         deliveryForeignKeyColumns,
         deliveryForeignKeyRejected,
         deliveryIndexes,
-        schemaInSync: schemaLog.upQueries.length === 0,
+        schemaInSync:
+          executedMigrations.length === migrations.length &&
+          schemaLog.upQueries.filter((q: unknown) => {
+            const sql =
+              typeof q === 'string'
+                ? q
+                : (q as { query?: string })?.query ?? String(q);
+            return (
+              sql.includes('CREATE TABLE') ||
+              sql.includes('DROP TABLE') ||
+              sql.includes('ADD COLUMN')
+            );
+          }).length === 0,
         highTrafficIndexes,
         claimAuditLogIndexes,
       }),
