@@ -286,7 +286,7 @@ async function main(): Promise<void> {
             const sql =
               typeof q === 'string'
                 ? q
-                : (q as { query?: string })?.query ?? String(q);
+                : ((q as { query?: string })?.query ?? String(q));
             return (
               sql.includes('CREATE TABLE') ||
               sql.includes('DROP TABLE') ||
