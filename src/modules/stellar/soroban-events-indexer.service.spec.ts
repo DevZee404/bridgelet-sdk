@@ -5,7 +5,6 @@ import { Logger } from '@nestjs/common';
 import {
   SorobanEventsIndexerService,
   RawSorobanEvent,
-  TARGET_CONTRACT_EVENTS,
 } from './soroban-events-indexer.service.js';
 import { ContractEvent } from './entities/contract-event.entity.js';
 
@@ -14,9 +13,11 @@ describe('SorobanEventsIndexerService', () => {
 
   const mockContractEventRepository = {
     create: jest.fn().mockImplementation((dto) => dto),
-    save: jest.fn().mockImplementation((event) =>
-      Promise.resolve({ id: 'event-uuid-123', ...event }),
-    ),
+    save: jest
+      .fn()
+      .mockImplementation((event) =>
+        Promise.resolve({ id: 'event-uuid-123', ...event }),
+      ),
     findOne: jest.fn().mockResolvedValue(null),
   };
 
@@ -252,7 +253,7 @@ describe('SorobanEventsIndexerService', () => {
 
       jest.spyOn(global, 'fetch').mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ events: [rawEvent] }),
+        json: () => Promise.resolve({ events: [rawEvent] }),
       } as Response);
 
       const events = await service.fetchEventsFromHorizon(100);

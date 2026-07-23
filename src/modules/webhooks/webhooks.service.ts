@@ -117,10 +117,7 @@ export class WebhooksService {
     maxRetries = 3,
   ): Promise<void> {
     const body = JSON.stringify({ event: eventType, ...payload });
-    const payloadHash = crypto
-      .createHash('sha256')
-      .update(body)
-      .digest('hex');
+    const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
     const signature = this.computeSignature(body, webhook.secret);
 
     const rawAccountId = payload['accountId'];

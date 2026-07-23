@@ -42,9 +42,8 @@ export class SorobanEventsIndexerService {
     const sorobanRpcUrl = this.configService.getOrThrow<string>(
       'stellar.sorobanRpcUrl',
     );
-    this.horizonUrl = this.configService.getOrThrow<string>(
-      'stellar.horizonUrl',
-    );
+    this.horizonUrl =
+      this.configService.getOrThrow<string>('stellar.horizonUrl');
     this.sorobanServer = new SorobanRpc.Server(sorobanRpcUrl);
   }
 
@@ -114,15 +113,19 @@ export class SorobanEventsIndexerService {
   /**
    * Fetches raw events from Soroban RPC using sorobanServer.getEvents()
    */
-  public async fetchEventsFromRpc(startLedger?: number): Promise<RawSorobanEvent[]> {
-    const filter = {
-      type: 'contract',
-      topics: [TARGET_CONTRACT_EVENTS.map((e) => e)],
-    };
+  public async fetchEventsFromRpc(
+    startLedger?: number,
+  ): Promise<RawSorobanEvent[]> {
+    const filters: SorobanRpc.Api.EventFilter[] = [
+      {
+        type: 'contract',
+        topics: [TARGET_CONTRACT_EVENTS.map((e) => e)],
+      },
+    ];
 
     const response = await this.sorobanServer.getEvents({
       startLedger: startLedger ?? 1,
-      filters: [filter as any],
+      filters,
     });
 
     return (response.events ?? []) as unknown as RawSorobanEvent[];
@@ -131,7 +134,9 @@ export class SorobanEventsIndexerService {
   /**
    * Fallback: Fetches raw events directly from Horizon /events HTTP endpoint
    */
-  public async fetchEventsFromHorizon(startLedger?: number): Promise<RawSorobanEvent[]> {
+  public async fetchEventsFromHorizon(
+    startLedger?: number,
+  ): Promise<RawSorobanEvent[]> {
     const url = new URL(`${this.horizonUrl}/events`);
     if (startLedger) {
       url.searchParams.set('start_ledger', startLedger.toString());
@@ -184,9 +189,7 @@ export class SorobanEventsIndexerService {
 
     const contractAddress =
       raw.contractAddress ?? raw.contractId ?? 'unknown_contract';
-    const ledgerSequence = String(
-      raw.ledgerSequence ?? raw.ledger ?? 0,
-    );
+    const ledgerSequence = String(raw.ledgerSequence ?? raw.ledger ?? 0);
     const txHash = raw.txHash ?? raw.transactionHash ?? '0'.repeat(64);
 
     let payload: Record<string, unknown> = {};

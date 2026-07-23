@@ -58,7 +58,11 @@ describe('WebhooksService', () => {
 
   const mockWebhookDeliveryRepository = {
     create: jest.fn().mockImplementation((dto) => dto),
-    save: jest.fn().mockImplementation((delivery) => Promise.resolve({ id: 'delivery-uuid', ...delivery })),
+    save: jest
+      .fn()
+      .mockImplementation((delivery) =>
+        Promise.resolve({ id: 'delivery-uuid', ...delivery }),
+      ),
   };
 
   beforeEach(async () => {
@@ -217,13 +221,11 @@ describe('WebhooksService', () => {
       const webhook = makeWebhook({ events: ['sweep.completed'] });
       mockQb.getMany.mockResolvedValue([webhook]);
 
-      const fetchMock = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          text: async () => '{"status":"ok"}',
-        } as Response);
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('{"status":"ok"}'),
+      } as Response);
 
       await service.triggerEvent('sweep.completed', {
         accountId: 'acc-123',
@@ -249,13 +251,11 @@ describe('WebhooksService', () => {
       const webhook = makeWebhook({ events: ['account.created'] });
       mockQb.getMany.mockResolvedValue([webhook]);
 
-      const fetchMock = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          text: async () => 'ok',
-        } as Response);
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('ok'),
+      } as Response);
 
       await service.triggerEvent('account.created', { accountId: 'acc-456' });
 
@@ -285,13 +285,11 @@ describe('WebhooksService', () => {
       const webhook = makeWebhook({ secret: WEBHOOK_SECRET });
       mockQb.getMany.mockResolvedValue([webhook]);
 
-      const fetchMock = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue({
-          ok: true,
-          status: 200,
-          text: async () => 'ok',
-        } as Response);
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('ok'),
+      } as Response);
 
       const payload = { accountId: 'acc-sig-test', amount: '50' };
       await service.triggerEvent('sweep.completed', payload);
@@ -316,15 +314,15 @@ describe('WebhooksService', () => {
       const webhook = makeWebhook();
       mockQb.getMany.mockResolvedValue([webhook]);
 
-      const fetchMock = jest
-        .spyOn(global, 'fetch')
-        .mockResolvedValue({
-          ok: false,
-          status: 503,
-          text: async () => 'Service Unavailable',
-        } as Response);
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: () => Promise.resolve('Service Unavailable'),
+      } as Response);
 
-      await service.triggerEvent('sweep.failed', { accountId: 'acc-retry-test' });
+      await service.triggerEvent('sweep.failed', {
+        accountId: 'acc-retry-test',
+      });
 
       expect(fetchMock).toHaveBeenCalledTimes(3);
       expect(mockWebhookDeliveryRepository.save).toHaveBeenCalledWith(
@@ -347,15 +345,17 @@ describe('WebhooksService', () => {
         .mockResolvedValueOnce({
           ok: false,
           status: 500,
-          text: async () => 'Error',
+          text: () => Promise.resolve('Error'),
         } as Response)
         .mockResolvedValueOnce({
           ok: true,
           status: 200,
-          text: async () => 'Success',
+          text: () => Promise.resolve('Success'),
         } as Response);
 
-      await service.triggerEvent('sweep.completed', { accountId: 'acc-retry-success' });
+      await service.triggerEvent('sweep.completed', {
+        accountId: 'acc-retry-success',
+      });
 
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(mockWebhookDeliveryRepository.save).toHaveBeenCalledWith(
@@ -380,11 +380,15 @@ describe('WebhooksService', () => {
       jest.spyOn(global, 'fetch').mockResolvedValue({
         ok: true,
         status: 200,
-        text: async () => 'ok',
+        text: () => Promise.resolve('ok'),
       } as Response);
 
-      mockWebhookDeliveryRepository.save.mockRejectedValueOnce(new Error('Save failed'));
-      mockWebhookRepository.update.mockRejectedValueOnce(new Error('Update failed'));
+      mockWebhookDeliveryRepository.save.mockRejectedValueOnce(
+        new Error('Save failed'),
+      );
+      mockWebhookRepository.update.mockRejectedValueOnce(
+        new Error('Update failed'),
+      );
 
       await expect(
         service.triggerEvent('sweep.completed', { accountId: 'acc-err-logs' }),

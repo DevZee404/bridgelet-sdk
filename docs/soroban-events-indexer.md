@@ -13,15 +13,15 @@
 
 ## Schema (`contract_events` Table)
 
-| Column             | Type         | Description                                        |
-| ------------------ | ------------ | -------------------------------------------------- |
-| `id`               | UUID         | Primary Key                                        |
-| `event_type`       | VARCHAR(255) | Type of event (`AccountCreated`, etc.)             |
-| `contract_address` | VARCHAR(128) | Address of the Soroban contract                    |
-| `ledger_sequence`  | BIGINT       | Ledger sequence number                             |
-| `tx_hash`          | VARCHAR(64)  | 64-character hex Stellar transaction hash          |
-| `payload`          | JSONB        | Event topic arguments and data values              |
-| `created_at`       | TIMESTAMP    | Record creation timestamp                          |
+| Column             | Type         | Description                               |
+| ------------------ | ------------ | ----------------------------------------- |
+| `id`               | UUID         | Primary Key                               |
+| `event_type`       | VARCHAR(255) | Type of event (`AccountCreated`, etc.)    |
+| `contract_address` | VARCHAR(128) | Address of the Soroban contract           |
+| `ledger_sequence`  | BIGINT       | Ledger sequence number                    |
+| `tx_hash`          | VARCHAR(64)  | 64-character hex Stellar transaction hash |
+| `payload`          | JSONB        | Event topic arguments and data values     |
+| `created_at`       | TIMESTAMP    | Record creation timestamp                 |
 
 ## Indexing Mechanism
 

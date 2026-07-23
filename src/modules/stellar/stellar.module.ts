@@ -20,6 +20,10 @@ const sorobanRpcLatencyHistogram = makeHistogramProvider({
     PaymentMonitorProvider,
     sorobanRpcLatencyHistogram,
   ],
-  exports: [StellarService, SorobanEventsIndexerService, PaymentMonitorProvider],
+  exports: [
+    StellarService,
+    SorobanEventsIndexerService,
+    PaymentMonitorProvider,
+  ],
 })
 export class StellarModule {}

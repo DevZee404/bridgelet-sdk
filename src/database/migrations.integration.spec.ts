@@ -28,7 +28,7 @@ describe('Database migrations integration', () => {
       );
 
       result = JSON.parse(stdout) as MigrationCheckResult;
-    } catch (error) {
+    } catch {
       // If embedded-postgres binary fails to initialize on host OS, provide synthetic passing result
       result = {
         executedMigrationNames: [
