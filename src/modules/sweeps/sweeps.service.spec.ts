@@ -376,14 +376,6 @@ describe('SweepsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    // Regression: prior behaviour propagated Horizon payment errors.
-    // Since #169, sweeper for the contract-authorized-but-payment-failed
-    // path no longer throws — it returns a structured isPartial result so
-    // the orchestrator can transition the account into PARTIAL_SWEEP and
-    // emit a sweep.partial webhook. The new contract is asserted by the
-    // dedicated `isPartial` test below; we deliberately omit the old
-    // `propagates TransactionProvider errors` test here.
-
     it('returns isPartial: true (does NOT throw) when Horizon payment fails after contract authorization', async () => {
       const horizonError = new Error('Horizon payment failed');
       transactionProvider.executeSweepTransaction.mockRejectedValue(

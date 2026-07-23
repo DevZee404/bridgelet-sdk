@@ -17,87 +17,6 @@ import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter } from 'prom-client';
 import { AccountLatencyMetricsProvider } from './providers/account-latency-metrics.provider.js';
 
-/**
- * AccountsService — Service-Level Documentation & Contributor Guidance
- *
- * Lifecycle Overview
- * ------------------
- * This service is an orchestration layer in the Bridgelet flow responsible for
- * ephemeral account creation, funding, claim-token lifecycle management,
- * interaction with the `StellarService`, persistence of account state, and
- * shaping API responses (`AccountResponseDto`). Typical flow:
- *
- * 1. Ephemeral account creation: a keypair is generated and an account is
- *    provisioned/funded on the Stellar network via `StellarService`.
- * 2. Claim generation: a claim token is produced and a hash of that token is
- *    stored on the account record (the plain token is returned in the API
- *    response only). The token is used by end-users to claim the funded
- *    ephemeral account.
- * 3. Claiming: an external request exchanges the token for the secret.
- * 4. Post-claim: account status and destination fields are updated accordingly.
- *
- * Security Notes
- * --------------
- * - Encryption status: `secretKeyEncrypted` is stored as an AES-256-GCM
- *   ciphertext via `SecretEncryptionUtil` (random IV per write, versioned
- *   `aes256gcm:v1:` prefix). Pre-PR #193 rows may still exist in migration
- *   window with either an unprefixed AES-GCM payload (decryption still
- *   succeeds) or the residual MVP `Buffer.from(secret).toString('base64')`
- *   placeholder (decryption throws; operator must run
- *   `npm run migrate:secrets -- --i-have-a-backup --execute` once before any
- *   claim can succeed against those rows). Key rotation is a separate concern
- *   and is NOT covered by this util — it requires a dual-key decrypt path.
- *     - Token signing uses the configured JWT secret; ensure the secret
- *       management and rotation policies meet your security requirements.
- *
- * - Token handling: the service stores only a SHA-256 hash of the claim token
- *   (`claimTokenHash`) rather than the raw token. The raw token is delivered
- *   once to callers via the generated claim URL. Changes to token format,
- *   signing algorithm, or expiry semantics are protocol-sensitive and will
- *   break clients if not coordinated.
- *
- * - Secret storage: `secretKeyEncrypted` is intended to hold an encrypted
- *   secret. Treat the current implementation as a placeholder. Do NOT
- *   replace it with a new encoding/encryption scheme without documenting the
- *   migration plan and ensuring compatibility for any live secrets.
- *
- * Integration Boundaries
- * ----------------------
- * - Assumptions about `StellarService`:
- *     - It provides `generateKeypair()` and `createEphemeralAccount()` with
- *       the semantics expected here (returning a transaction hash when
- *       funding succeeds).
- *     - The format of the public key and secret follow Stellar keypair
- *       conventions; these assumptions are protocol-sensitive.
- *
- * - External integrators rely on stable response fields (e.g., `claimUrl`,
- *   `publicKey`, `txHash`). Response shaping is backward-compatible by
- *   design — avoid renaming or removing fields without a migration/compat
- *   strategy.
- *
- * Mapping & DTO Intent
- * --------------------
- * - Response DTOs intentionally expose only a subset of stored fields. For
- *   example, the raw `secret` is never returned; the `claimUrl` provides a
- *   user-facing way to perform a claim without disclosing secrets.
- * - Conditional fields: some response fields are conditionally populated
- *   (e.g., `claimUrl` only when a claim token exists). Maintain these rules
- *   when changing mapping logic to avoid leaking internal state.
- *
- * Contributor Guidance — Ask If Unsure
- * -----------------------------------
- * ⚠️ This service encodes protocol-level behavior. If you are unsure whether
- * a change affects lifecycle guarantees, consult maintainers before modifying
- * logic.
- *
- * If any behavior is unclear:
- * - Check the repository README for architecture context.
- * - Review the `docs/` directory for protocol expectations.
- * - Ask before making assumptions, especially around: token generation,
- *   expiry semantics, data exposure, or secret handling.
- *
- * When in doubt: document, do not redesign silently.
- */
 @Injectable()
 export class AccountsService {
   private readonly logger = new Logger(AccountsService.name);
@@ -191,7 +110,6 @@ export class AccountsService {
       });
 
       this.latencyMetrics.record(Date.now() - startMs, true);
-
       return {
         accountId: account.id,
         publicKey: account.publicKey,

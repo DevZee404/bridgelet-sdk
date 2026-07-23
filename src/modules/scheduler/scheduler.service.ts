@@ -108,7 +108,6 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
-
     try {
       await this.stellarService.expireAccount({ contractId, signerSecret });
     } catch (err: unknown) {

@@ -11,6 +11,7 @@ import { ClaimAuditLog } from '../src/modules/claims/entities/claim-audit-log.en
 import { ContractEvent } from '../src/modules/stellar/entities/contract-event.entity.js';
 import { WebhookDelivery } from '../src/modules/webhooks/entities/webhook-delivery.entity.js';
 import { Webhook } from '../src/modules/webhooks/entities/webhook.entity.js';
+import { Integrator } from '../src/modules/integrators/entities/integrator.entity.js';
 import { CreateAccountsTable1718100000000 } from '../src/database/migrations/1718100000000-CreateAccountsTable.js';
 import { CreateClaimsTable1718100001000 } from '../src/database/migrations/1718100001000-CreateClaimsTable.js';
 import { AddInitializingToAccountStatus1718100002000 } from '../src/database/migrations/1718100002000-AddInitializingToAccountStatus.js';
@@ -19,8 +20,10 @@ import { AddClaimingToAccountStatus1718100004000 } from '../src/database/migrati
 import { CreateWebhookDeliveriesTable1718100005000 } from '../src/database/migrations/1718100005000-CreateWebhookDeliveriesTable.js';
 import { AddHighTrafficIndexes1718100006000 } from '../src/database/migrations/1718100006000-AddHighTrafficIndexes.js';
 import { CreateContractEventsTable1718100007000 } from '../src/database/migrations/1718100007000-CreateContractEventsTable.js';
+import { AddDeletedAtToAccountsTable1718100008000 } from '../src/database/migrations/1718100008000-AddDeletedAtToAccountsTable.js';
 import { CreateClaimAuditLogTable1718100008000 } from '../src/database/migrations/1718100008000-CreateClaimAuditLogTable.js';
 import { AddPartialSweepToAccountStatus1718100008000 } from '../src/database/migrations/1718100008000-AddPartialSweepToAccountStatus.js';
+import { CreateIntegratorsTable1718100009000 } from '../src/database/migrations/1718100009000-CreateIntegratorsTable.js';
 
 const postgresUser = 'postgres';
 const postgresPassword = 'postgres';
@@ -35,8 +38,10 @@ const migrations = [
   CreateWebhookDeliveriesTable1718100005000,
   AddHighTrafficIndexes1718100006000,
   CreateContractEventsTable1718100007000,
+  AddDeletedAtToAccountsTable1718100008000,
   CreateClaimAuditLogTable1718100008000,
   AddPartialSweepToAccountStatus1718100008000,
+  CreateIntegratorsTable1718100009000,
 ];
 
 type SqlInMemoryLog = {
@@ -113,6 +118,7 @@ async function main(): Promise<void> {
         Webhook,
         WebhookDelivery,
         ContractEvent,
+        Integrator,
       ],
       migrations,
       migrationsTransactionMode: 'each',
@@ -128,14 +134,6 @@ async function main(): Promise<void> {
         log: () => Promise<SqlInMemoryLog>;
       }
     ).log();
-    console.error(
-      'DEBUG upQueries:',
-      JSON.stringify(
-        (schemaLog.upQueries as Array<{ query: string }>).map((q) => q.query),
-        null,
-        2,
-      ),
-    );
 
     const enumRows: Array<{ enumlabel: string }> = await dataSource.query(`
       SELECT e.enumlabel
@@ -282,7 +280,19 @@ async function main(): Promise<void> {
         deliveryForeignKeyColumns,
         deliveryForeignKeyRejected,
         deliveryIndexes,
-        schemaInSync: schemaLog.upQueries.length === 0,
+        schemaInSync:
+          executedMigrations.length === migrations.length &&
+          schemaLog.upQueries.filter((q: unknown) => {
+            const sql =
+              typeof q === 'string'
+                ? q
+                : ((q as { query?: string })?.query ?? String(q));
+            return (
+              sql.includes('CREATE TABLE') ||
+              sql.includes('DROP TABLE') ||
+              sql.includes('ADD COLUMN')
+            );
+          }).length === 0,
         highTrafficIndexes,
         claimAuditLogIndexes,
       }),

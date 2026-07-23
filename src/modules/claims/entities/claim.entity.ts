@@ -30,7 +30,14 @@ export class Claim {
   @Column({ type: 'varchar', length: 56 })
   destinationAddress: string;
 
-  @Column({ type: 'varchar', length: 64 })
+  @Column({
+    type: 'varchar',
+    length: 64,
+    comment:
+      'Stellar transaction hash of the sweep. ' +
+      'Always a 64-character hex string — never a placeholder value. ' +
+      'Enforced by TransactionHashValidator before record creation.',
+  })
   sweepTxHash: string;
 
   @Column({ type: 'varchar', length: 100 })

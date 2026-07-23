@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { Webhook } from './entities/webhook.entity.js';
+import { WebhookDelivery } from './entities/webhook-delivery.entity.js';
 import { CreateWebhookDto } from './dto/create-webhook.dto.js';
 import { UpdateWebhookDto } from './dto/update-webhook.dto.js';
 import { WebhookResponseDto } from './dto/webhook-response.dto.js';
@@ -14,6 +15,8 @@ export class WebhooksService {
   constructor(
     @InjectRepository(Webhook)
     private readonly webhookRepository: Repository<Webhook>,
+    @InjectRepository(WebhookDelivery)
+    private readonly deliveryRepository: Repository<WebhookDelivery>,
   ) {}
 
   async create(dto: CreateWebhookDto): Promise<WebhookResponseDto> {
@@ -111,43 +114,84 @@ export class WebhooksService {
     webhook: Webhook,
     eventType: string,
     payload: Record<string, unknown>,
+    maxRetries = 3,
   ): Promise<void> {
     const body = JSON.stringify({ event: eventType, ...payload });
+    const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
     const signature = this.computeSignature(body, webhook.secret);
 
     const rawAccountId = payload['accountId'];
     const accountId =
       typeof rawAccountId === 'string' ? rawAccountId : 'unknown';
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10_000);
+    let attemptCount = 0;
+    let success = false;
+    let lastResponseCode: number | null = null;
+    let lastResponseBody: string | null = null;
 
-    try {
-      const response = await fetch(webhook.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Bridgelet-Signature': `sha256=${signature}`,
-          'X-Bridgelet-Event': eventType,
-        },
-        body,
-        signal: controller.signal,
-      });
+    while (attemptCount < maxRetries && !success) {
+      attemptCount++;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10_000);
 
-      if (!response.ok) {
+      try {
+        const response = await fetch(webhook.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Bridgelet-Signature': `sha256=${signature}`,
+            'X-Bridgelet-Event': eventType,
+          },
+          body,
+          signal: controller.signal,
+        });
+
+        lastResponseCode = response.status;
+        const text = await response.text();
+        lastResponseBody = text ? text.substring(0, 2048) : null;
+
+        if (response.ok) {
+          success = true;
+        } else {
+          this.logger.error(
+            `Webhook delivery failed (attempt ${attemptCount}/${maxRetries}): ` +
+              `event=${eventType}, accountId=${accountId}, url=${webhook.url}, status=${response.status}`,
+          );
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        lastResponseBody = msg.substring(0, 2048);
         this.logger.error(
-          `Webhook delivery failed: event=${eventType}, accountId=${accountId}, ` +
-            `url=${webhook.url}, status=${response.status}`,
+          `Webhook delivery error (attempt ${attemptCount}/${maxRetries}): ` +
+            `event=${eventType}, accountId=${accountId}, url=${webhook.url}, error=${msg}`,
         );
+      } finally {
+        clearTimeout(timeoutId);
       }
+
+      if (!success && attemptCount < maxRetries) {
+        const backoffMs = Math.min(100 * Math.pow(2, attemptCount - 1), 1000);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
+    }
+
+    // Record delivery attempt log in DB
+    try {
+      const delivery = this.deliveryRepository.create({
+        subscriptionId: webhook.id,
+        eventType,
+        payloadHash,
+        attemptCount,
+        lastResponseCode,
+        lastResponseBody,
+        deliveredAt: success ? new Date() : null,
+      });
+      await this.deliveryRepository.save(delivery);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `Webhook delivery error: event=${eventType}, accountId=${accountId}, ` +
-          `url=${webhook.url}, error=${msg}`,
+      this.logger.warn(
+        `Failed to record webhook delivery log for ${webhook.id}: ${msg}`,
       );
-    } finally {
-      clearTimeout(timeoutId);
     }
 
     try {

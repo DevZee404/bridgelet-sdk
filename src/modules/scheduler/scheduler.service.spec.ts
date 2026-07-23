@@ -12,7 +12,6 @@ import { WebhooksService } from '../webhooks/webhooks.service.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Replace the makeAccount helper:
 const makeAccount = (overrides: Partial<Account> = {}): Account =>
   ({
     id: 'acc-uuid-1',
@@ -336,7 +335,6 @@ describe('SchedulerService', () => {
     it('handles null metadata gracefully', async () => {
       const account = makeAccount({
         status: AccountStatus.INITIALIZING,
-        // test null metadata handling; cast to satisfy TypeScript
         metadata: null as unknown as Record<string, any> | undefined,
       });
       accountsRepo.find.mockResolvedValueOnce([account]);
