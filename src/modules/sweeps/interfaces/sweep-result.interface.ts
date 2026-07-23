@@ -23,4 +23,11 @@ export interface SweepResult {
    * the `sweep.partial` webhook payload.
    */
   error?: string;
+  /**
+   * Transaction hash of the AccountMerge operation that reclaimed the
+   * ephemeral account's minimum reserve. Populated when the merge
+   * completed successfully after the Horizon payment. Absent when the
+   * merge was skipped or failed (merge failure is non-fatal).
+   */
+  mergeHash?: string;
 }

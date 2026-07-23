@@ -15,6 +15,7 @@ import { SweepMetricsProvider } from './providers/sweep-metrics.provider.js';
 
 const MOCK_AUTH_SIGNATURE = Buffer.alloc(64, 1);
 const MOCK_TX_HASH = 'abc123txhash';
+const MOCK_MERGE_HASH = 'merge456txhash';
 const MOCK_CONTRACT_AUTH_HASH = 'deadbeef'.repeat(8); // 64-char hex
 
 const validRequest = {
@@ -33,6 +34,13 @@ const mockTxResult = {
   ledger: 12345,
   successful: true,
   timestamp: new Date('2024-01-01T12:00:00Z'),
+};
+
+const mockMergeResult = {
+  hash: MOCK_MERGE_HASH,
+  ledger: 12346,
+  successful: true,
+  timestamp: new Date('2024-01-01T12:00:01Z'),
 };
 
 // ---------------------------------------------------------------------------
@@ -56,6 +64,7 @@ describe('SweepsService', () => {
   };
   let transactionProvider: {
     executeSweepTransaction: jest.Mock<() => Promise<any>>;
+    mergeAccount: jest.Mock<() => Promise<any>>;
   };
   let stellarService: { executeSweep: jest.Mock<() => Promise<any>> };
 
@@ -75,6 +84,7 @@ describe('SweepsService', () => {
 
     transactionProvider = {
       executeSweepTransaction: jest.fn<any>().mockResolvedValue(mockTxResult),
+      mergeAccount: jest.fn<any>().mockResolvedValue(mockMergeResult),
     };
 
     stellarService = {
@@ -197,7 +207,7 @@ describe('SweepsService', () => {
       expect(result.txHash).toBe(MOCK_TX_HASH);
     });
 
-    it('returns success: true and correct fields', async () => {
+    it('returns success: true and correct fields including mergeHash', async () => {
       const result = await service.executeSweep(validRequest);
       expect(result).toEqual({
         success: true,
@@ -206,7 +216,133 @@ describe('SweepsService', () => {
         amountSwept: validRequest.amount,
         destination: validRequest.destinationAddress,
         timestamp: mockTxResult.timestamp,
+        mergeHash: MOCK_MERGE_HASH,
       });
+    });
+
+    it('omits mergeHash from result when merge is skipped (no mergeAccount mock)', async () => {
+      // Simulate merge failure — result should still be success but no mergeHash
+      transactionProvider.mergeAccount.mockRejectedValueOnce(
+        new Error('op_has_sub_entries'),
+      );
+      const result = await service.executeSweep(validRequest);
+      expect(result.success).toBe(true);
+      expect(result.txHash).toBe(MOCK_TX_HASH);
+      expect(result.mergeHash).toBeUndefined();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // AccountMerge integration tests (Issue #217)
+  // -------------------------------------------------------------------------
+
+  describe('executeSweep — AccountMerge (Issue #217)', () => {
+    it('calls mergeAccount after successful Horizon payment', async () => {
+      await service.executeSweep(validRequest);
+      expect(transactionProvider.mergeAccount).toHaveBeenCalledWith({
+        ephemeralSecret: validRequest.ephemeralSecret,
+        destinationAddress: validRequest.destinationAddress,
+      });
+    });
+
+    it('calls the Horizon payment before mergeAccount', async () => {
+      const order: string[] = [];
+      transactionProvider.executeSweepTransaction.mockImplementation(() => {
+        order.push('payment');
+        return Promise.resolve(mockTxResult as any);
+      });
+      transactionProvider.mergeAccount.mockImplementation(() => {
+        order.push('merge');
+        return Promise.resolve(mockMergeResult as any);
+      });
+
+      await service.executeSweep(validRequest);
+
+      expect(order.indexOf('payment')).toBeLessThan(order.indexOf('merge'));
+    });
+
+    it('populates mergeHash in SweepResult when merge succeeds', async () => {
+      const result = await service.executeSweep(validRequest);
+      expect(result.mergeHash).toBe(MOCK_MERGE_HASH);
+    });
+
+    it('still returns success=true even when mergeAccount fails', async () => {
+      transactionProvider.mergeAccount.mockRejectedValueOnce(
+        new Error('op_has_sub_entries'),
+      );
+      const result = await service.executeSweep(validRequest);
+      expect(result.success).toBe(true);
+      expect(result.txHash).toBe(MOCK_TX_HASH);
+    });
+
+    it('sets mergeHash to undefined when mergeAccount fails', async () => {
+      transactionProvider.mergeAccount.mockRejectedValueOnce(
+        new Error('op_has_sub_entries'),
+      );
+      const result = await service.executeSweep(validRequest);
+      expect(result.mergeHash).toBeUndefined();
+    });
+
+    it('logs a warning when mergeAccount fails (non-fatal)', async () => {
+      transactionProvider.mergeAccount.mockRejectedValueOnce(
+        new Error('op_has_sub_entries'),
+      );
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => {});
+
+      await service.executeSweep(validRequest);
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('AccountMerge failed (non-critical)'),
+      );
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(validRequest.accountId),
+      );
+    });
+
+    it('does NOT call mergeAccount when Horizon payment fails (isPartial)', async () => {
+      transactionProvider.executeSweepTransaction.mockRejectedValueOnce(
+        new Error('Horizon payment failed'),
+      );
+      await service.executeSweep(validRequest);
+      expect(transactionProvider.mergeAccount).not.toHaveBeenCalled();
+    });
+
+    it('does NOT call mergeAccount when contract auth fails', async () => {
+      stellarService.executeSweep.mockRejectedValueOnce(
+        new Error('ALREADY_SWEPT'),
+      );
+      await expect(service.executeSweep(validRequest)).rejects.toThrow(
+        'ALREADY_SWEPT',
+      );
+      expect(transactionProvider.mergeAccount).not.toHaveBeenCalled();
+    });
+
+    it('calls mergeAccount with correct params when skipContractAuth=true', async () => {
+      await service.executeSweep({ ...validRequest, skipContractAuth: true });
+      expect(transactionProvider.mergeAccount).toHaveBeenCalledWith({
+        ephemeralSecret: validRequest.ephemeralSecret,
+        destinationAddress: validRequest.destinationAddress,
+      });
+    });
+
+    it('returns mergeHash when skipContractAuth=true and merge succeeds', async () => {
+      const result = await service.executeSweep({
+        ...validRequest,
+        skipContractAuth: true,
+      });
+      expect(result.mergeHash).toBe(MOCK_MERGE_HASH);
+    });
+
+    it('merge failure with sub-entries error does not affect txHash or amountSwept', async () => {
+      transactionProvider.mergeAccount.mockRejectedValueOnce(
+        new Error('op_has_sub_entries'),
+      );
+      const result = await service.executeSweep(validRequest);
+      expect(result.txHash).toBe(MOCK_TX_HASH);
+      expect(result.amountSwept).toBe(validRequest.amount);
+      expect(result.destination).toBe(validRequest.destinationAddress);
     });
   });
 

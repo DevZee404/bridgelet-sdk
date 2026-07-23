@@ -30,7 +30,8 @@ export class SweepsService {
 
   /**
    * Execute sweep: authorize on-chain via SweepController contract, then
-   * transfer funds via a classic Horizon payment.
+   * transfer funds via a classic Horizon payment, and finally merge the
+   * ephemeral account into the destination to reclaim the minimum reserve.
    *
    * Flow:
    * Order of operations is strict and intentional:
@@ -38,10 +39,15 @@ export class SweepsService {
    *   2. Generate auth signature (MVP stub — see ContractProvider)
    *   3. Submit SweepController.execute_sweep() on Soroban
    *   4. Execute the Horizon payment to move funds
+   *   5. AccountMerge: merge ephemeral → destination to reclaim minimum reserve
    *
    * ⚠️ If Step 3 succeeds but Step 4 fails, the contract will be in Swept
-   * state but no funds will have moved. Return isPartial: true so the
-   * orchestrator can mark the account PARTIAL_SWEEP.
+   * state but no funds will have moved. This is logged as a critical error
+   * for manual recovery. Do not retry automatically.
+   *
+   * ⚠️ If Step 4 succeeds but Step 5 fails, the sweep is still considered
+   * successful. The merge is a best-effort reserve recovery operation;
+   * failure is logged as a warning and the result carries no mergeHash.
    */
   public async executeSweep(
     sweepExecutionRequest: SweepExecutionRequest,
@@ -143,6 +149,34 @@ export class SweepsService {
       };
     }
 
+    // Step 5: AccountMerge — merge the ephemeral account into the destination
+    // to reclaim the minimum XLM reserve (currently 1 XLM). This is a
+    // best-effort operation: if it fails (e.g. the account still has open
+    // offers or trustlines), we log a warning and continue returning success.
+    // The main sweep (payment) has already completed at this point.
+    let mergeHash: string | undefined;
+    try {
+      const mergeResult = await this.transactionProvider.mergeAccount({
+        ephemeralSecret: sweepExecutionRequest.ephemeralSecret,
+        destinationAddress: sweepExecutionRequest.destinationAddress,
+      });
+      mergeHash = mergeResult.hash;
+      this.logger.log(
+        `AccountMerge successful for account ${sweepExecutionRequest.accountId}: ` +
+          `mergeHash=${mergeHash}`,
+      );
+    } catch (mergeError) {
+      // Non-fatal: the payment already moved the funds. The minimum reserve
+      // will remain in the ephemeral account. Log and continue.
+      const mergeMessage =
+        mergeError instanceof Error ? mergeError.message : String(mergeError);
+      this.logger.warn(
+        `AccountMerge failed (non-critical) for account ` +
+          `${sweepExecutionRequest.accountId}: ${mergeMessage}. ` +
+          `Main sweep txHash=${transactionResult.hash} was successful.`,
+      );
+    }
+
     this.logger.log(`Sweep complete: txHash=${transactionResult.hash}`);
     this.sweepMetrics.recordCompleted();
 
@@ -153,6 +187,7 @@ export class SweepsService {
       amountSwept: sweepExecutionRequest.amount,
       destination: sweepExecutionRequest.destinationAddress,
       timestamp: transactionResult.timestamp,
+      ...(mergeHash !== undefined && { mergeHash }),
     };
   }
 
