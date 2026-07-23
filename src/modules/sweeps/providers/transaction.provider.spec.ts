@@ -1765,7 +1765,23 @@ describe('TransactionProvider', () => {
 
     it('returns p75 fee_charged from Horizon fee_stats', async () => {
       mockFeeStats.mockResolvedValue({
-        fee_charged: { p75: '250', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        fee_charged: {
+          p75: '250',
+          p50: '150',
+          max: '500',
+          min: '100',
+          mode: '100',
+          p10: '100',
+          p20: '100',
+          p30: '100',
+          p40: '100',
+          p60: '200',
+          p70: '200',
+          p80: '300',
+          p90: '400',
+          p95: '450',
+          p99: '490',
+        },
         max_fee: { p75: '500' },
         last_ledger: '1000',
         last_ledger_base_fee: '100',
@@ -1778,7 +1794,23 @@ describe('TransactionProvider', () => {
 
     it('caches the fee for 60 seconds and does not re-fetch', async () => {
       mockFeeStats.mockResolvedValue({
-        fee_charged: { p75: '300', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '350', p90: '400', p95: '450', p99: '490' },
+        fee_charged: {
+          p75: '300',
+          p50: '150',
+          max: '500',
+          min: '100',
+          mode: '100',
+          p10: '100',
+          p20: '100',
+          p30: '100',
+          p40: '100',
+          p60: '200',
+          p70: '200',
+          p80: '350',
+          p90: '400',
+          p95: '450',
+          p99: '490',
+        },
         max_fee: { p75: '500' },
         last_ledger: '1001',
         last_ledger_base_fee: '100',
@@ -1796,7 +1828,23 @@ describe('TransactionProvider', () => {
 
     it('re-fetches after cache expires (TTL=60s)', async () => {
       mockFeeStats.mockResolvedValue({
-        fee_charged: { p75: '200', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        fee_charged: {
+          p75: '200',
+          p50: '150',
+          max: '500',
+          min: '100',
+          mode: '100',
+          p10: '100',
+          p20: '100',
+          p30: '100',
+          p40: '100',
+          p60: '200',
+          p70: '200',
+          p80: '300',
+          p90: '400',
+          p95: '450',
+          p99: '490',
+        },
         max_fee: { p75: '400' },
         last_ledger: '1002',
         last_ledger_base_fee: '100',
@@ -1804,7 +1852,10 @@ describe('TransactionProvider', () => {
       });
 
       // Seed cache with an expired timestamp (61 seconds ago)
-      (provider as any).feeCache = { fee: '999', fetchedAt: Date.now() - 61_000 };
+      (provider as any).feeCache = {
+        fee: '999',
+        fetchedAt: Date.now() - 61_000,
+      };
 
       const fee = await provider.fetchDynamicFee();
       expect(fee).toBe('200');
@@ -1820,7 +1871,22 @@ describe('TransactionProvider', () => {
 
     it('falls back to BASE_FEE when p75 is missing from response', async () => {
       mockFeeStats.mockResolvedValue({
-        fee_charged: { p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        fee_charged: {
+          p50: '150',
+          max: '500',
+          min: '100',
+          mode: '100',
+          p10: '100',
+          p20: '100',
+          p30: '100',
+          p40: '100',
+          p60: '200',
+          p70: '200',
+          p80: '300',
+          p90: '400',
+          p95: '450',
+          p99: '490',
+        },
         max_fee: { p75: '400' },
         last_ledger: '1003',
         last_ledger_base_fee: '100',
@@ -1833,7 +1899,23 @@ describe('TransactionProvider', () => {
 
     it('falls back to BASE_FEE when p75 is zero', async () => {
       mockFeeStats.mockResolvedValue({
-        fee_charged: { p75: '0', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        fee_charged: {
+          p75: '0',
+          p50: '150',
+          max: '500',
+          min: '100',
+          mode: '100',
+          p10: '100',
+          p20: '100',
+          p30: '100',
+          p40: '100',
+          p60: '200',
+          p70: '200',
+          p80: '300',
+          p90: '400',
+          p95: '450',
+          p99: '490',
+        },
         max_fee: { p75: '400' },
         last_ledger: '1004',
         last_ledger_base_fee: '100',
@@ -1846,7 +1928,23 @@ describe('TransactionProvider', () => {
 
     it('falls back to BASE_FEE when p75 is not a number', async () => {
       mockFeeStats.mockResolvedValue({
-        fee_charged: { p75: 'NaN', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        fee_charged: {
+          p75: 'NaN',
+          p50: '150',
+          max: '500',
+          min: '100',
+          mode: '100',
+          p10: '100',
+          p20: '100',
+          p30: '100',
+          p40: '100',
+          p60: '200',
+          p70: '200',
+          p80: '300',
+          p90: '400',
+          p95: '450',
+          p99: '490',
+        },
         max_fee: { p75: '400' },
         last_ledger: '1005',
         last_ledger_base_fee: '100',
@@ -1865,7 +1963,23 @@ describe('TransactionProvider', () => {
 
       // Second call succeeds — should re-fetch (cache not set on error)
       mockFeeStats.mockResolvedValueOnce({
-        fee_charged: { p75: '350', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        fee_charged: {
+          p75: '350',
+          p50: '150',
+          max: '500',
+          min: '100',
+          mode: '100',
+          p10: '100',
+          p20: '100',
+          p30: '100',
+          p40: '100',
+          p60: '200',
+          p70: '200',
+          p80: '300',
+          p90: '400',
+          p95: '450',
+          p99: '490',
+        },
         max_fee: { p75: '400' },
         last_ledger: '1006',
         last_ledger_base_fee: '100',
@@ -1886,8 +2000,16 @@ describe('TransactionProvider', () => {
       // Mock fetchDynamicFee on the provider instance
       jest.spyOn(provider, 'fetchDynamicFee').mockResolvedValue('500');
 
-      mockLoadAccount.mockResolvedValue({ id: 'acc-123', sequence: '1', balances: [] });
-      mockSubmitTransaction.mockResolvedValue({ hash: 'dyn-fee-hash', ledger: 200, successful: true });
+      mockLoadAccount.mockResolvedValue({
+        id: 'acc-123',
+        sequence: '1',
+        balances: [],
+      });
+      mockSubmitTransaction.mockResolvedValue({
+        hash: 'dyn-fee-hash',
+        ledger: 200,
+        successful: true,
+      });
 
       await provider.executeSweepTransaction({
         ephemeralSecret: 'S_VALID_SECRET',
@@ -1907,8 +2029,16 @@ describe('TransactionProvider', () => {
     it('calls fetchDynamicFee and uses returned fee instead of BASE_FEE', async () => {
       jest.spyOn(provider, 'fetchDynamicFee').mockResolvedValue('400');
 
-      mockLoadAccount.mockResolvedValue({ id: 'acc-123', sequence: '1', balances: [] });
-      mockSubmitTransaction.mockResolvedValue({ hash: 'dyn-merge-hash', ledger: 201, successful: true });
+      mockLoadAccount.mockResolvedValue({
+        id: 'acc-123',
+        sequence: '1',
+        balances: [],
+      });
+      mockSubmitTransaction.mockResolvedValue({
+        hash: 'dyn-merge-hash',
+        ledger: 201,
+        successful: true,
+      });
 
       await provider.mergeAccount({
         ephemeralSecret: 'S_VALID_SECRET',
