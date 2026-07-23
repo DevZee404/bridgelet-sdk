@@ -284,7 +284,7 @@ describe('TransactionProvider', () => {
       expect(mockTransactionBuilder).toHaveBeenCalledWith(
         { id: 'acc-123', sequence: '1', balances: [] },
         {
-          fee: BASE_FEE,
+          fee: String(BASE_FEE),
           networkPassphrase: Networks.TESTNET,
         },
       );
@@ -326,7 +326,7 @@ describe('TransactionProvider', () => {
       expect(mockTransactionBuilder).toHaveBeenCalledWith(
         { id: 'acc-123', sequence: '1', balances: [] },
         {
-          fee: BASE_FEE,
+          fee: String(BASE_FEE),
           networkPassphrase: Networks.PUBLIC,
         },
       );
@@ -350,7 +350,7 @@ describe('TransactionProvider', () => {
       expect(mockTransactionBuilder).toHaveBeenCalledWith(
         { id: 'acc-123', sequence: '1', balances: [] },
         {
-          fee: BASE_FEE,
+          fee: String(BASE_FEE),
           networkPassphrase: Networks.TESTNET,
         },
       );
@@ -912,7 +912,7 @@ describe('TransactionProvider', () => {
       expect(mockTransactionBuilder).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({
-          fee: BASE_FEE,
+          fee: String(BASE_FEE),
         }),
       );
       expect(BASE_FEE).toBe(100);
@@ -942,7 +942,7 @@ describe('TransactionProvider', () => {
       expect(mockTransactionBuilder).toHaveBeenCalledWith(
         { id: 'acc-123', sequence: '1', balances: [] },
         {
-          fee: BASE_FEE,
+          fee: String(BASE_FEE),
           networkPassphrase: Networks.TESTNET,
         },
       );
@@ -1745,6 +1745,180 @@ describe('TransactionProvider', () => {
         expect(err.message).toContain('Invalid asset format');
         expect(err.message).toContain('INVALID_FORMAT');
       }
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // fetchDynamicFee — Issue #214: dynamic p75 fee strategy
+  // -------------------------------------------------------------------------
+
+  describe('fetchDynamicFee', () => {
+    let mockFeeStats: jest.Mock;
+
+    beforeEach(() => {
+      mockFeeStats = jest.fn();
+      // Attach feeStats to the Horizon.Server mock
+      (provider as any).server.feeStats = mockFeeStats;
+      // Reset cache between tests
+      (provider as any).feeCache = null;
+    });
+
+    it('returns p75 fee_charged from Horizon fee_stats', async () => {
+      mockFeeStats.mockResolvedValue({
+        fee_charged: { p75: '250', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        max_fee: { p75: '500' },
+        last_ledger: '1000',
+        last_ledger_base_fee: '100',
+        ledger_capacity_usage: '0.5',
+      });
+
+      const fee = await provider.fetchDynamicFee();
+      expect(fee).toBe('250');
+    });
+
+    it('caches the fee for 60 seconds and does not re-fetch', async () => {
+      mockFeeStats.mockResolvedValue({
+        fee_charged: { p75: '300', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '350', p90: '400', p95: '450', p99: '490' },
+        max_fee: { p75: '500' },
+        last_ledger: '1001',
+        last_ledger_base_fee: '100',
+        ledger_capacity_usage: '0.5',
+      });
+
+      const fee1 = await provider.fetchDynamicFee();
+      const fee2 = await provider.fetchDynamicFee();
+
+      expect(fee1).toBe('300');
+      expect(fee2).toBe('300');
+      // Only fetched once due to cache
+      expect(mockFeeStats).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-fetches after cache expires (TTL=60s)', async () => {
+      mockFeeStats.mockResolvedValue({
+        fee_charged: { p75: '200', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        max_fee: { p75: '400' },
+        last_ledger: '1002',
+        last_ledger_base_fee: '100',
+        ledger_capacity_usage: '0.5',
+      });
+
+      // Seed cache with an expired timestamp (61 seconds ago)
+      (provider as any).feeCache = { fee: '999', fetchedAt: Date.now() - 61_000 };
+
+      const fee = await provider.fetchDynamicFee();
+      expect(fee).toBe('200');
+      expect(mockFeeStats).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to BASE_FEE when feeStats() throws', async () => {
+      mockFeeStats.mockRejectedValue(new Error('Horizon unavailable'));
+
+      const fee = await provider.fetchDynamicFee();
+      expect(fee).toBe(String(BASE_FEE));
+    });
+
+    it('falls back to BASE_FEE when p75 is missing from response', async () => {
+      mockFeeStats.mockResolvedValue({
+        fee_charged: { p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        max_fee: { p75: '400' },
+        last_ledger: '1003',
+        last_ledger_base_fee: '100',
+        ledger_capacity_usage: '0.5',
+      });
+
+      const fee = await provider.fetchDynamicFee();
+      expect(fee).toBe(String(BASE_FEE));
+    });
+
+    it('falls back to BASE_FEE when p75 is zero', async () => {
+      mockFeeStats.mockResolvedValue({
+        fee_charged: { p75: '0', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        max_fee: { p75: '400' },
+        last_ledger: '1004',
+        last_ledger_base_fee: '100',
+        ledger_capacity_usage: '0.5',
+      });
+
+      const fee = await provider.fetchDynamicFee();
+      expect(fee).toBe(String(BASE_FEE));
+    });
+
+    it('falls back to BASE_FEE when p75 is not a number', async () => {
+      mockFeeStats.mockResolvedValue({
+        fee_charged: { p75: 'NaN', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        max_fee: { p75: '400' },
+        last_ledger: '1005',
+        last_ledger_base_fee: '100',
+        ledger_capacity_usage: '0.5',
+      });
+
+      const fee = await provider.fetchDynamicFee();
+      expect(fee).toBe(String(BASE_FEE));
+    });
+
+    it('still returns a fresh fee after a fallback (cache not poisoned by error)', async () => {
+      // First call fails
+      mockFeeStats.mockRejectedValueOnce(new Error('Timeout'));
+      const fallback = await provider.fetchDynamicFee();
+      expect(fallback).toBe(String(BASE_FEE));
+
+      // Second call succeeds — should re-fetch (cache not set on error)
+      mockFeeStats.mockResolvedValueOnce({
+        fee_charged: { p75: '350', p50: '150', max: '500', min: '100', mode: '100', p10: '100', p20: '100', p30: '100', p40: '100', p60: '200', p70: '200', p80: '300', p90: '400', p95: '450', p99: '490' },
+        max_fee: { p75: '400' },
+        last_ledger: '1006',
+        last_ledger_base_fee: '100',
+        ledger_capacity_usage: '0.5',
+      });
+      const fresh = await provider.fetchDynamicFee();
+      expect(fresh).toBe('350');
+      expect(mockFeeStats).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Dynamic fee used in executeSweepTransaction and mergeAccount (Issue #214)
+  // -------------------------------------------------------------------------
+
+  describe('executeSweepTransaction — uses dynamic fee', () => {
+    it('calls fetchDynamicFee and uses returned fee instead of BASE_FEE', async () => {
+      // Mock fetchDynamicFee on the provider instance
+      jest.spyOn(provider, 'fetchDynamicFee').mockResolvedValue('500');
+
+      mockLoadAccount.mockResolvedValue({ id: 'acc-123', sequence: '1', balances: [] });
+      mockSubmitTransaction.mockResolvedValue({ hash: 'dyn-fee-hash', ledger: 200, successful: true });
+
+      await provider.executeSweepTransaction({
+        ephemeralSecret: 'S_VALID_SECRET',
+        destinationAddress: 'GD5J6HLF5666X4AZLTFTXGKWDBSUXSWXP6P5F20O1337',
+        amount: '100',
+        asset: 'native',
+      });
+
+      expect(mockTransactionBuilder).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ fee: '500' }),
+      );
+    });
+  });
+
+  describe('mergeAccount — uses dynamic fee', () => {
+    it('calls fetchDynamicFee and uses returned fee instead of BASE_FEE', async () => {
+      jest.spyOn(provider, 'fetchDynamicFee').mockResolvedValue('400');
+
+      mockLoadAccount.mockResolvedValue({ id: 'acc-123', sequence: '1', balances: [] });
+      mockSubmitTransaction.mockResolvedValue({ hash: 'dyn-merge-hash', ledger: 201, successful: true });
+
+      await provider.mergeAccount({
+        ephemeralSecret: 'S_VALID_SECRET',
+        destinationAddress: 'GD5J6HLF5666X4AZLTFTXGKWDBSUXSWXP6P5F20O1337',
+      });
+
+      expect(mockTransactionBuilder).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ fee: '400' }),
+      );
     });
   });
 });

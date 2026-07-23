@@ -27,11 +27,33 @@ interface HorizonErrorResponse {
   stack?: string;
 }
 
+/**
+ * The Horizon `FeeDistribution` SDK type does not include `p75` in its TypeScript
+ * definition, but the Horizon REST API does return this field at runtime.
+ * We extend the type locally to satisfy the compiler.
+ */
+interface FeeDistributionWithP75 {
+  p75: string;
+  [key: string]: string;
+}
+
+/** Cache entry for the p75 fee fetched from Horizon /fee_stats */
+interface FeeCache {
+  fee: string;
+  fetchedAt: number;
+}
+
+/** Cache TTL: 60 seconds */
+const FEE_CACHE_TTL_MS = 60_000;
+
 @Injectable()
 export class TransactionProvider {
   private readonly logger = new Logger(TransactionProvider.name);
   private readonly server: Horizon.Server;
   private readonly networkPassphrase: string;
+
+  /** In-memory cache for the dynamic p75 fee */
+  private feeCache: FeeCache | null = null;
 
   constructor(private readonly configService: ConfigService) {
     const horizonUrl =
@@ -46,7 +68,54 @@ export class TransactionProvider {
   }
 
   /**
-   * Execute sweep transaction: transfer all funds to destination
+   * Fetch the p75 `fee_charged` value from Horizon `/fee_stats` and cache it
+   * for 60 seconds to avoid excessive Horizon calls.
+   *
+   * Falls back to `BASE_FEE` if the fetch fails or returns an unusable value,
+   * so the sweep pipeline is never blocked by a fee-stats outage.
+   *
+   * @returns Fee string (stroops) suitable for `TransactionBuilder.fee`
+   */
+  public async fetchDynamicFee(): Promise<string> {
+    const now = Date.now();
+
+    // Return cached value if still fresh
+    if (this.feeCache && now - this.feeCache.fetchedAt < FEE_CACHE_TTL_MS) {
+      this.logger.debug(
+        `Using cached dynamic fee: ${this.feeCache.fee} stroops`,
+      );
+      return this.feeCache.fee;
+    }
+
+    try {
+      const stats = await this.server.feeStats();
+      // The Horizon SDK types don't expose p75, but the REST API returns it.
+      const feeCharged = stats.fee_charged as unknown as FeeDistributionWithP75;
+      const p75 = feeCharged?.p75;
+
+      if (!p75 || isNaN(Number(p75)) || Number(p75) <= 0) {
+        this.logger.warn(
+          `fee_stats p75 value invalid (${p75}), falling back to BASE_FEE`,
+        );
+        return String(BASE_FEE);
+      }
+
+      const fee = p75;
+      this.feeCache = { fee, fetchedAt: now };
+      this.logger.debug(`Fetched dynamic fee: ${fee} stroops (p75)`);
+      return fee;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to fetch fee_stats from Horizon: ${message}. Falling back to BASE_FEE.`,
+      );
+      return String(BASE_FEE);
+    }
+  }
+
+  /**
+   * Execute sweep transaction: transfer all funds to destination.
+   * Uses the p75 fee from Horizon fee_stats (60s cache) instead of BASE_FEE.
    */
   public async executeSweepTransaction(
     params: ExecuteTransactionParams,
@@ -67,9 +136,12 @@ export class TransactionProvider {
       // Parse asset (format: "CODE:ISSUER" or "native")
       const asset = this.parseAsset(params.asset);
 
+      // Fetch dynamic fee (p75 from fee_stats, 60s cache, fallback to BASE_FEE)
+      const fee = await this.fetchDynamicFee();
+
       // Build payment transaction
       const transaction = new TransactionBuilder(sourceAccount, {
-        fee: BASE_FEE,
+        fee,
         networkPassphrase: this.networkPassphrase,
       })
         .addOperation(
@@ -121,7 +193,8 @@ export class TransactionProvider {
   }
 
   /**
-   * Merge ephemeral account into destination to reclaim base reserve
+   * Merge ephemeral account into destination to reclaim base reserve.
+   * Uses the p75 fee from Horizon fee_stats (60s cache) instead of BASE_FEE.
    */
   public async mergeAccount(
     params: MergeAccountParams,
@@ -139,9 +212,12 @@ export class TransactionProvider {
         sourceKeypair.publicKey(),
       );
 
+      // Fetch dynamic fee (p75 from fee_stats, 60s cache, fallback to BASE_FEE)
+      const fee = await this.fetchDynamicFee();
+
       // Build account merge transaction
       const transaction = new TransactionBuilder(sourceAccount, {
-        fee: BASE_FEE,
+        fee,
         networkPassphrase: this.networkPassphrase,
       })
         .addOperation(
