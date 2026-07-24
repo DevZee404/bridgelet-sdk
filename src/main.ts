@@ -2,6 +2,7 @@ import './tracing.js';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module.js';
 import { PinoLoggerService } from './common/logger/pino-logger.service.js';
 
@@ -34,6 +35,8 @@ async function bootstrap() {
   const isProduction = process.env.NODE_ENV === 'production';
   const logger = isProduction ? new PinoLoggerService() : undefined;
   const app = await NestFactory.create(AppModule, { logger });
+
+  app.use(helmet());
 
   app.useGlobalPipes(
     new ValidationPipe({

@@ -13,12 +13,16 @@ import { VerifyClaimDto } from './dto/verify-claim.dto.js';
 import { RedeemClaimDto } from './dto/redeem-claim.dto.js';
 import { ClaimRedemptionResponseDto } from './dto/claim-redemption-response.dto.js';
 import { ClaimVerificationResponseDto } from './dto/claim-verification-response.dto.js';
+import { JwtKeyRotationProvider } from '../../common/crypto/jwt-key-rotation.provider.js';
 
 @ApiTags('claims')
 @Controller('claims')
 @UseGuards(ThrottlerGuard)
 export class ClaimsController {
-  constructor(private readonly claimsService: ClaimsService) {}
+  constructor(
+    private readonly claimsService: ClaimsService,
+    private readonly jwtKeyRotation: JwtKeyRotationProvider,
+  ) {}
 
   @Get(':id')
   @ApiOperation({ summary: 'Get claim details by ID' })
@@ -79,5 +83,15 @@ export class ClaimsController {
       redeemClaimDto.claimToken,
       redeemClaimDto.destinationAddress,
     );
+  }
+
+  @Get('.well-known/jwks.json')
+  @ApiOperation({ summary: 'JWKS endpoint for JWT key discovery' })
+  @ApiResponse({
+    status: 200,
+    description: 'JSON Web Key Set with available signing keys',
+  })
+  public getJwks(): { keys: Array<{ kid: string; kty: string; alg: string; use: string }> } {
+    return this.jwtKeyRotation.getJwks();
   }
 }

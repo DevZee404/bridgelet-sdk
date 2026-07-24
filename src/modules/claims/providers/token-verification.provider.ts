@@ -8,19 +8,18 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 import { Account } from '../../accounts/entities/account.entity.js';
 import { ClaimVerificationResponseDto } from '../dto/claim-verification-response.dto.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
-
-const { TokenExpiredError, JsonWebTokenError } = jwt;
+import { JwtKeyRotationProvider } from '../../../common/crypto/jwt-key-rotation.provider.js';
 
 interface ClaimTokenPayload {
   publicKey: string;
   type: 'claim';
   iat: number;
   exp: number;
+  [key: string]: unknown;
 }
 
 @Injectable()
@@ -31,6 +30,7 @@ export class TokenVerificationProvider {
     @InjectRepository(Account)
     private readonly accountRepository: Repository<Account>,
     private readonly configService: ConfigService,
+    private readonly jwtKeyRotation: JwtKeyRotationProvider,
   ) {}
 
   async verifyClaimToken(token: string): Promise<ClaimVerificationResponseDto> {
@@ -95,11 +95,8 @@ export class TokenVerificationProvider {
 
   private decodeClaimToken(token: string): ClaimTokenPayload {
     try {
-      const jwtSecret = this.configService.getOrThrow<string>('JWT_SECRET');
+      const payload = this.jwtKeyRotation.verify<ClaimTokenPayload>(token);
 
-      const payload = jwt.verify(token, jwtSecret) as ClaimTokenPayload;
-
-      // Verify token type is 'claim'
       if (payload.type !== 'claim') {
         this.logger.warn(`Invalid token type: ${String(payload.type)}`);
         throw new UnauthorizedException('Invalid token type');
@@ -107,12 +104,14 @@ export class TokenVerificationProvider {
 
       return payload;
     } catch (error) {
-      if (error instanceof TokenExpiredError) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (message.includes('expired')) {
         this.logger.warn('Token has expired');
         throw new UnauthorizedException('Token has expired');
       }
 
-      if (error instanceof JsonWebTokenError) {
+      if (message.includes('invalid') || message.includes('signature')) {
         this.logger.warn('Invalid token signature');
         throw new UnauthorizedException('Invalid token signature');
       }

@@ -5,12 +5,12 @@ import { Account } from './entities/account.entity.js';
 import { CreateAccountDto } from './dto/create-account.dto.js';
 import { AccountResponseDto } from './dto/account-response.dto.js';
 import { StellarService } from '../stellar/stellar.service.js';
-import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { AccountStatus } from './enums/account-status.enum.js';
 import { SecretEncryptionUtil } from '../../common/crypto/secret-encryption.util.js';
 import { KmsKeyProvider } from '../../common/crypto/kms-key.provider.js';
+import { JwtKeyRotationProvider } from '../../common/crypto/jwt-key-rotation.provider.js';
 import { WebhooksService } from '../webhooks/webhooks.service.js';
 import { sanitizeMetadata } from '../../common/utils/metadata-sanitizer.util.js';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
@@ -25,13 +25,13 @@ export class AccountsService {
     @InjectRepository(Account)
     private accountsRepository: Repository<Account>,
     private configService: ConfigService,
-    private jwtService: JwtService,
     private stellarService: StellarService,
     private webhooksService: WebhooksService,
     @InjectMetric('account_creation_total')
     private readonly accountCreationCounter: Counter<string>,
     private latencyMetrics: AccountLatencyMetricsProvider,
     private kmsKeyProvider: KmsKeyProvider,
+    private jwtKeyRotation: JwtKeyRotationProvider,
   ) {}
 
   public async create(
@@ -186,16 +186,14 @@ export class AccountsService {
      * Security notes / contributor guidance:
      * - The token expiry (`app.claimTokenExpiry`) is protocol-sensitive.
      *   Changing expiry semantics requires coordination with clients.
-     * - The JWT signing secret must be managed and rotated safely. Do not
-     *   switch to a different signing mechanism without an explicit design
-     *   and migration plan.
+     * - The JWT signing secret is managed via JwtKeyRotationProvider which
+     *   supports key rotation. New tokens include a `kid` header so
+     *   verifiers can identify the correct signing key.
      */
-    // const secret =
-    //   this.configService.get<string>('app.jwtSecret') ?? 'fallback secret';
     const expiry =
       this.configService.get<number>('app.claimTokenExpiry') ?? 2592000;
 
-    return this.jwtService.sign(
+    return this.jwtKeyRotation.sign(
       { publicKey, type: 'claim' },
       { expiresIn: `${expiry}s` },
     );

@@ -13,6 +13,7 @@ import {
   Address,
   xdr,
   hash,
+  Keypair,
 } from '@stellar/stellar-sdk';
 import type { AuthorizeSweepParams } from '../interfaces/authorize-sweep-params.interface.js';
 import type { ContractAuthResult } from '../interfaces/contract-auth-result.interface.js';
@@ -63,9 +64,6 @@ export class ContractProvider {
       // Prepare destination address parameter
       const destination = Address.fromString(params.destinationAddress);
 
-      // Generate authorization signature
-      // In production, this would be signed by an authorized key
-      // For MVP, we create a dummy signature
       const authSignature = this.generateAuthSignature(params);
 
       // Build contract invocation transaction
@@ -92,9 +90,21 @@ export class ContractProvider {
         throw new Error(`Contract simulation failed: ${simulated.error}`);
       }
 
-      // For MVP, we don't actually submit this transaction
-      // The sweep will be handled by direct Stellar payment
-      // In production, this would be submitted to enforce on-chain authorization
+      const preparedTx = await server.prepareTransaction(transaction);
+      preparedTx.sign(
+        Keypair.fromSecret(
+          this.configService.getOrThrow<string>('stellar.sweepSigningKeySeed'),
+        ),
+      );
+
+      const sendResult = await server.sendTransaction(preparedTx);
+      if (sendResult.status === 'ERROR') {
+        throw new Error(
+          `Contract sendTransaction failed: ${JSON.stringify(sendResult.errorResult)}`,
+        );
+      }
+
+      await this.waitForTransaction(server, sendResult.hash);
 
       this.logger.log('Contract authorization successful');
 
@@ -175,5 +185,23 @@ export class ContractProvider {
     const message = `${ephemeralKey}:${destination}:${ts}`;
     const hashBuffer = hash(Buffer.from(message));
     return hashBuffer.toString('hex');
+  }
+
+  private async waitForTransaction(
+    server: rpc.Server,
+    txHash: string,
+    maxAttempts = 10,
+  ): Promise<void> {
+    for (let i = 0; i < maxAttempts; i++) {
+      const status = await server.getTransaction(txHash);
+      if (status.status === rpc.Api.GetTransactionStatus.SUCCESS) return;
+      if (status.status === rpc.Api.GetTransactionStatus.FAILED) {
+        throw new Error(`Transaction ${txHash} failed on-chain`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+    throw new Error(
+      `Transaction ${txHash} not confirmed after ${maxAttempts} attempts`,
+    );
   }
 }

@@ -27,6 +27,9 @@ const mockServer = {
     Promise<rpc.Api.SimulateTransactionResponse>,
     [any]
   >(),
+  prepareTransaction: jest.fn(),
+  sendTransaction: jest.fn(),
+  getTransaction: jest.fn(),
 };
 
 const mockContract = {
@@ -69,6 +72,11 @@ jest.mock('@stellar/stellar-sdk', () => {
       ...actual.Address,
       fromString: jest.fn(() => mockAddress),
     },
+    Keypair: {
+      fromSecret: jest.fn(() => ({
+        publicKey: jest.fn(() => 'GBBM6BKZPEHWYO3E3YKRETPKQ5MRNWSKA722GHBMZABXD4F2J2RROMSG'),
+      })),
+    },
     xdr: {
       ...actual.xdr,
       ScVal: {
@@ -84,9 +92,8 @@ jest.mock('@stellar/stellar-sdk', () => {
  *
  * SCOPE: Tests Soroban smart contract authorization for sweep operations
  *
- * MVP vs PRODUCTION BEHAVIOR:
- * - MVP: Uses dummy signatures, does not submit transactions
- * - Production: Will use real Ed25519 signatures and submit transactions on-chain
+ * BEHAVIOR: Uses real Ed25519 signatures via SweepSignerUtil and submits
+ * transactions on-chain via Soroban RPC.
  *
  * SECURITY CRITICAL: This component handles authorization for asset sweeps
  * All cryptographic operations must be verified by security review before production
@@ -145,6 +152,7 @@ describe('ContractProvider', () => {
     mockTransaction = {
       hash: jest.fn(() => Buffer.from('mock-tx-hash')),
       toEnvelope: jest.fn(),
+      sign: jest.fn(),
     };
 
     // Setup mock implementations
@@ -168,6 +176,16 @@ describe('ContractProvider', () => {
     // Setup other SDK mocks
     (rpc.Api.isSimulationError as unknown as jest.Mock).mockReturnValue(false);
     (Address.fromString as jest.Mock).mockReturnValue(mockAddress);
+
+    // Setup transaction submission mocks
+    mockServer.prepareTransaction.mockResolvedValue(mockTransaction);
+    mockServer.sendTransaction.mockResolvedValue({
+      status: 'SUCCESS',
+      hash: 'mock-tx-hash-123',
+    });
+    mockServer.getTransaction.mockResolvedValue({
+      status: 'SUCCESS',
+    });
 
     // Create testing module
     const module: TestingModule = await Test.createTestingModule({
@@ -357,8 +375,7 @@ describe('ContractProvider', () => {
    * SECTION 3: authorizeSweep - Successful Authorization Tests
    * Tests the happy path for sweep authorization
    *
-   * MVP BEHAVIOR: Returns dummy hash, does not submit transaction
-   * PRODUCTION: Will return actual transaction hash and submit to network
+   * Uses real Ed25519 signatures and submits transactions on-chain
    */
   describe('authorizeSweep - Successful Authorization', () => {
     it('should successfully authorize sweep with valid parameters', async () => {

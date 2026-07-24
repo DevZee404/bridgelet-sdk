@@ -158,6 +158,16 @@ export class SweepsService {
         };
       }
 
+      // Step 4b: Multi-asset sweep — sweep additional non-zero balances.
+      if (sweepExecutionRequest.sweepAllAssets) {
+        await this.sweepAdditionalAssets(
+          sweepExecutionRequest.ephemeralPublicKey,
+          sweepExecutionRequest.ephemeralSecret,
+          sweepExecutionRequest.destinationAddress,
+          sweepExecutionRequest.asset,
+        );
+      }
+
       // Step 5: AccountMerge — merge the ephemeral account into the destination
       // to reclaim the minimum XLM reserve (currently 1 XLM). This is a
       // best-effort operation.
@@ -227,5 +237,66 @@ export class SweepsService {
     reason?: string;
   }> {
     return this.validationProvider.getSweepStatus(accountId);
+  }
+
+  /**
+   * Sweep additional non-zero balances on the ephemeral account.
+   * Called after the primary asset sweep when `sweepAllAssets` is true.
+   * Each additional balance is sent as a separate Horizon payment.
+   * Failures on individual assets are logged but do not fail the overall sweep.
+   */
+  private async sweepAdditionalAssets(
+    ephemeralPublicKey: string,
+    ephemeralSecret: string,
+    destinationAddress: string,
+    primaryAsset: string,
+  ): Promise<void> {
+    let balances: Array<{ asset: string; amount: string }>;
+    try {
+      balances =
+        await this.transactionProvider.getAllAccountBalances(ephemeralPublicKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to query additional balances for multi-asset sweep on ` +
+          `${ephemeralPublicKey}: ${message}. Skipping additional assets.`,
+      );
+      return;
+    }
+
+    // Filter out the primary asset already swept and native (XLM) which is
+    // handled by the AccountMerge in step 5
+    const additionalAssets = balances.filter(
+      (b) => b.asset !== primaryAsset && b.asset !== 'native',
+    );
+
+    if (additionalAssets.length === 0) {
+      this.logger.log('No additional non-zero assets to sweep');
+      return;
+    }
+
+    this.logger.log(
+      `Sweeping ${additionalAssets.length} additional asset(s): ` +
+        additionalAssets.map((b) => b.asset).join(', '),
+    );
+
+    for (const balance of additionalAssets) {
+      try {
+        await this.transactionProvider.executeSweepTransaction({
+          ephemeralSecret,
+          destinationAddress,
+          amount: balance.amount,
+          asset: balance.asset,
+        });
+        this.logger.log(
+          `Additional asset swept: ${balance.asset} ${balance.amount}`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Failed to sweep additional asset ${balance.asset}: ${message}`,
+        );
+      }
+    }
   }
 }

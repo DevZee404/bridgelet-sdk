@@ -9,17 +9,8 @@ import {
 } from '@nestjs/common';
 import { TokenVerificationProvider } from './token-verification.provider.js';
 import { Account } from '../../accounts/entities/account.entity.js';
-import jwt from 'jsonwebtoken';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
-
-// Mock jsonwebtoken to control verify output, but keep actual error classes
-jest.mock('jsonwebtoken', () => {
-  const actualJwt = jest.requireActual('jsonwebtoken');
-  return {
-    ...actualJwt,
-    verify: jest.fn(),
-  };
-});
+import { JwtKeyRotationProvider } from '../../../common/crypto/jwt-key-rotation.provider.js';
 
 describe('TokenVerificationProvider', () => {
   let provider: TokenVerificationProvider;
@@ -35,6 +26,13 @@ describe('TokenVerificationProvider', () => {
     getOrThrow: jest.fn(),
   };
 
+  // Mock for JwtKeyRotationProvider
+  const mockJwtKeyRotation = {
+    sign: jest.fn(),
+    verify: jest.fn(),
+    getJwks: jest.fn(),
+  };
+
   beforeEach(async () => {
     // Set up the testing module with required providers and mocks
     const module: TestingModule = await Test.createTestingModule({
@@ -47,6 +45,10 @@ describe('TokenVerificationProvider', () => {
         {
           provide: ConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: JwtKeyRotationProvider,
+          useValue: mockJwtKeyRotation,
         },
       ],
     }).compile();
@@ -85,9 +87,8 @@ describe('TokenVerificationProvider', () => {
     };
 
     beforeEach(() => {
-      // Setup default mock returns for the JWT secret and verification
-      mockConfigService.getOrThrow.mockReturnValue('test-secret');
-      (jwt.verify as jest.Mock).mockReturnValue(mockDecodedToken);
+      // Setup default mock returns for the JWT verification
+      mockJwtKeyRotation.verify.mockReturnValue(mockDecodedToken);
       // Spy on the logger to verify error logging
       jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
       jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
@@ -109,7 +110,7 @@ describe('TokenVerificationProvider', () => {
         asset: mockAccount.asset,
         expiresAt: mockAccount.expiresAt,
       });
-      expect(jwt.verify).toHaveBeenCalledWith(validToken, 'test-secret');
+      expect(mockJwtKeyRotation.verify).toHaveBeenCalledWith(validToken);
       expect(mockAccountRepository.findOne).toHaveBeenCalledWith({
         where: { claimTokenHash: expect.any(String) },
       });
@@ -128,10 +129,10 @@ describe('TokenVerificationProvider', () => {
       expect(result.expiresAt).toBeInstanceOf(Date);
     });
 
-    it('should throw UnauthorizedException for expired JWT (TokenExpiredError)', async () => {
-      // Setup: Mock JWT library throwing TokenExpiredError
-      (jwt.verify as jest.Mock).mockImplementation(() => {
-        throw new jwt.TokenExpiredError('jwt expired', new Date());
+    it('should throw UnauthorizedException for expired JWT', async () => {
+      // Setup: Mock JWT rotation provider throwing expired error
+      mockJwtKeyRotation.verify.mockImplementation(() => {
+        throw new Error('jwt expired');
       });
 
       // Execute & Assert: Should throw UnauthorizedException
@@ -141,10 +142,10 @@ describe('TokenVerificationProvider', () => {
       expect(Logger.prototype.warn).toHaveBeenCalledWith('Token has expired');
     });
 
-    it('should throw UnauthorizedException for invalid JWT signature (JsonWebTokenError)', async () => {
-      // Setup: Mock JWT library throwing JsonWebTokenError
-      (jwt.verify as jest.Mock).mockImplementation(() => {
-        throw new jwt.JsonWebTokenError('invalid signature');
+    it('should throw UnauthorizedException for invalid JWT signature', async () => {
+      // Setup: Mock JWT rotation provider throwing invalid signature error
+      mockJwtKeyRotation.verify.mockImplementation(() => {
+        throw new Error('invalid signature');
       });
 
       // Execute & Assert: Should throw UnauthorizedException
@@ -158,7 +159,7 @@ describe('TokenVerificationProvider', () => {
 
     it('should throw UnauthorizedException for token with wrong type', async () => {
       // Setup: Mock token payload with invalid 'type' field
-      (jwt.verify as jest.Mock).mockReturnValue({
+      mockJwtKeyRotation.verify.mockReturnValue({
         ...mockDecodedToken,
         type: 'access',
       });

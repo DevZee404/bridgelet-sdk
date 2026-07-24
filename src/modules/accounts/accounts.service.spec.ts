@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { NotFoundException } from '@nestjs/common';
 import { getToken } from '@willsoto/nestjs-prometheus';
@@ -12,6 +11,7 @@ import { AccountStatus } from './enums/account-status.enum.js';
 import { CreateAccountDto } from './dto/create-account.dto.js';
 import { AccountLatencyMetricsProvider } from './providers/account-latency-metrics.provider.js';
 import { KmsKeyProvider } from '../../common/crypto/kms-key.provider.js';
+import { JwtKeyRotationProvider } from '../../common/crypto/jwt-key-rotation.provider.js';
 
 const VALID_KEY = 'G' + 'A'.repeat(55);
 const VALID_KEY2 = 'G' + 'B'.repeat(55);
@@ -28,8 +28,10 @@ const mockStellarService = {
   createEphemeralAccount: jest.fn(),
 };
 
-const mockJwtService = {
+const mockJwtKeyRotation = {
   sign: jest.fn().mockReturnValue('mock-jwt-token'),
+  verify: jest.fn().mockReturnValue({ publicKey: 'test', type: 'claim', iat: 0, exp: 9999999999 }),
+  getJwks: jest.fn().mockReturnValue({ keys: [] }),
 };
 
 const mockConfigService = {
@@ -91,7 +93,6 @@ describe('AccountsService', () => {
         AccountsService,
         { provide: getRepositoryToken(Account), useValue: mockRepo },
         { provide: StellarService, useValue: mockStellarService },
-        { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: WebhooksService, useValue: mockWebhooksService },
         AccountLatencyMetricsProvider,
@@ -104,6 +105,10 @@ describe('AccountsService', () => {
           useValue: {
             getEncryptionKey: jest.fn().mockReturnValue('a'.repeat(64)),
           },
+        },
+        {
+          provide: JwtKeyRotationProvider,
+          useValue: mockJwtKeyRotation,
         },
       ],
     }).compile();
