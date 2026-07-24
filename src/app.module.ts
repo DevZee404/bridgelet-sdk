@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+import { APP_GUARD } from '@nestjs/core';
 
 import { AccountsModule } from './modules/accounts/accounts.module.js';
 import databaseConfig from './config/database.config.js';
@@ -21,6 +22,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module.js';
 import { IntegratorsModule } from './modules/integrators/integrators.module.js';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
 import { CryptoModule } from './common/crypto/crypto.module.js';
+import { ApiKeyAuthGuard } from './common/guards/api-key-auth.guard.js';
 
 @Module({
   imports: [
@@ -41,7 +43,7 @@ import { CryptoModule } from './common/crypto/crypto.module.js';
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
-        ttl: 60000, // 1 minute
+        ttl: 60000,
         limit: parseInt(process.env.API_RATE_LIMIT || '100'),
       },
     ]),
@@ -57,7 +59,13 @@ import { CryptoModule } from './common/crypto/crypto.module.js';
     CryptoModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ApiKeyAuthGuard,
+    },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

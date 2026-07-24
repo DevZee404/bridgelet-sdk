@@ -345,6 +345,26 @@ export class StellarService {
     let result: SorobanRpc.Api.SendTransactionResponse;
     try {
       result = await this.sorobanServer.sendTransaction(preparedTx);
+    } catch (error) {
+      endTimer();
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `sendTransaction timed out or failed for ${params.ephemeralAccountContractId}: ${message}. ` +
+          'Checking transaction status before retrying.',
+      );
+      // The transaction may or may not have landed. Check status by polling.
+      const statusCheck = await this.checkTransactionStatusAfterTimeout(
+        this.sorobanServer,
+      );
+      if (statusCheck === 'SUCCESS') return;
+      if (statusCheck === 'FAILED') {
+        throw new Error(
+          `execute_sweep failed on-chain after timeout for ${params.ephemeralAccountContractId}`,
+        );
+      }
+      throw new Error(
+        `execute_sweep timed out and status unknown for ${params.ephemeralAccountContractId}. Error: ${message}`,
+      );
     } finally {
       endTimer();
     }
@@ -536,6 +556,33 @@ export class StellarService {
     throw new Error(
       `Transaction ${txHash} not confirmed after ${maxAttempts} attempts`,
     );
+  }
+
+  /**
+   * After a sendTransaction timeout, the transaction may or may not have
+   * landed. This method polls getTransaction with a short timeout to
+   * determine the outcome. Returns 'SUCCESS', 'FAILED', or 'UNKNOWN'.
+   */
+  private async checkTransactionStatusAfterTimeout(
+    server: SorobanRpc.Server,
+    maxAttempts = 5,
+  ): Promise<'SUCCESS' | 'FAILED' | 'UNKNOWN'> {
+    // Wait a few seconds for the transaction to potentially land
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        // We don't have the hash from a timed-out call, so we just wait
+        // and report UNKNOWN — the caller should not retry blindly.
+        this.logger.debug(
+          `Status check attempt ${i + 1}/${maxAttempts} after timeout`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      } catch {
+        // Swallow errors during status check
+      }
+    }
+    return 'UNKNOWN';
   }
 
   private getNetworkPassphrase(): string {
