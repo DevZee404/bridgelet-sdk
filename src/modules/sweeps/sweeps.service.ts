@@ -4,6 +4,7 @@ import { ValidationProvider } from './providers/validation.provider.js';
 import { ContractProvider } from './providers/contract.provider.js';
 import { TransactionProvider } from './providers/transaction.provider.js';
 import { StellarService } from '../stellar/stellar.service.js';
+import { SweepRetryQueueService } from './sweep-retry-queue.service.js';
 import type { SweepExecutionRequest } from './interfaces/execute-sweep.interface.js';
 import type { SweepResult } from './interfaces/sweep-result.interface.js';
 import { TransactionResult } from './interfaces/transaction-result.interface.js';
@@ -21,6 +22,7 @@ export class SweepsService {
     private readonly transactionProvider: TransactionProvider,
     private readonly stellarService: StellarService,
     private readonly configService: ConfigService,
+    private readonly retryQueue: SweepRetryQueueService,
     @InjectMetric('sweep_success_total')
     private readonly sweepSuccessCounter: Counter<string>,
     @InjectMetric('sweep_failure_total')
@@ -56,139 +58,155 @@ export class SweepsService {
       `Executing sweep for account: ${sweepExecutionRequest.accountId}`,
     );
 
-    // Step 1: Validate sweep parameters
-    await this.validationProvider.validateSweepParameters(
-      sweepExecutionRequest,
-    );
-
-    // Steps 2 & 3: Smart-contract authorization.
-    // On a retry into PARTIAL_SWEEP the contract is already in Swept state
-    // and re-invoking execute_sweep would revert on-chain. The orchestrator
-    // (ClaimRedemptionProvider) signals this via skipContractAuth: true and
-    // we synthesise the auth hash deterministically from the same inputs
-    // for audit-trail purposes.
-    let contractAuthHash: string;
-    if (sweepExecutionRequest.skipContractAuth) {
-      this.logger.log(
-        `Skip-contract-auth retry for account ${sweepExecutionRequest.accountId}: ` +
-          'contract already in Swept state from prior partial failure.',
-      );
-      contractAuthHash = this.contractProvider.generateAuthHash(
-        sweepExecutionRequest.ephemeralPublicKey,
-        sweepExecutionRequest.destinationAddress,
-      );
-    } else {
-      // Step 2: Generate authorization signature for the contract call
-      const authSignature = this.contractProvider.generateAuthSignature({
-        ephemeralPublicKey: sweepExecutionRequest.ephemeralPublicKey,
-        destinationAddress: sweepExecutionRequest.destinationAddress,
-      });
-
-      // Step 3: Submit execute_sweep() on the SweepController Soroban contract
-      const sweepControllerContractId = this.configService.getOrThrow<string>(
-        'stellar.contracts.sweepController',
-      );
-      const ephemeralAccountContractId = this.configService.getOrThrow<string>(
-        'stellar.contracts.ephemeralAccount',
-      );
-
-      await this.stellarService.executeSweep({
-        sweepControllerContractId,
-        ephemeralAccountContractId,
-        destination: sweepExecutionRequest.destinationAddress,
-        authSignature,
-        signerSecret: sweepExecutionRequest.ephemeralSecret,
-      });
-
-      this.logger.log(
-        `Contract sweep authorized for account ${sweepExecutionRequest.accountId}`,
-      );
-
-      contractAuthHash = this.contractProvider.generateAuthHash(
-        sweepExecutionRequest.ephemeralPublicKey,
-        sweepExecutionRequest.destinationAddress,
-      );
-    }
-
-    // Step 4: Execute the classic Horizon payment to move funds.
-    // We catch errors here and return a structured partial result
-    // (isPartial: true) instead of propagating them: the contract may
-    // already be in Swept state by this point and a thrown exception
-    // would force the orchestrator into a manual recovery flow.
-    // Returning isPartial lets the caller transition the account to
-    // PARTIAL_SWEEP and emit a sweep.partial webhook so a retry
-    // redemption (or an operator) can pick up the work.
-    let transactionResult: TransactionResult;
     try {
-      transactionResult =
-        await this.transactionProvider.executeSweepTransaction({
+      // Step 1: Validate sweep parameters
+      await this.validationProvider.validateSweepParameters(
+        sweepExecutionRequest,
+      );
+
+      // Steps 2 & 3: Smart-contract authorization.
+      // On a retry into PARTIAL_SWEEP the contract is already in Swept state
+      // and re-invoking execute_sweep would revert on-chain. The orchestrator
+      // (ClaimRedemptionProvider) signals this via skipContractAuth: true and
+      // we synthesise the auth hash deterministically from the same inputs
+      // for audit-trail purposes.
+      let contractAuthHash: string;
+      if (sweepExecutionRequest.skipContractAuth) {
+        this.logger.log(
+          `Skip-contract-auth retry for account ${sweepExecutionRequest.accountId}: ` +
+            'contract already in Swept state from prior partial failure.',
+        );
+        contractAuthHash = this.contractProvider.generateAuthHash(
+          sweepExecutionRequest.ephemeralPublicKey,
+          sweepExecutionRequest.destinationAddress,
+        );
+      } else {
+        // Step 2: Generate authorization signature for the contract call
+        const authSignature = this.contractProvider.generateAuthSignature({
+          ephemeralPublicKey: sweepExecutionRequest.ephemeralPublicKey,
+          destinationAddress: sweepExecutionRequest.destinationAddress,
+        });
+
+        // Step 3: Submit execute_sweep() on the SweepController Soroban contract
+        const sweepControllerContractId = this.configService.getOrThrow<string>(
+          'stellar.contracts.sweepController',
+        );
+        const ephemeralAccountContractId =
+          this.configService.getOrThrow<string>(
+            'stellar.contracts.ephemeralAccount',
+          );
+
+        await this.stellarService.executeSweep({
+          sweepControllerContractId,
+          ephemeralAccountContractId,
+          destination: sweepExecutionRequest.destinationAddress,
+          authSignature,
+          signerSecret: sweepExecutionRequest.ephemeralSecret,
+        });
+
+        this.logger.log(
+          `Contract sweep authorized for account ${sweepExecutionRequest.accountId}`,
+        );
+
+        contractAuthHash = this.contractProvider.generateAuthHash(
+          sweepExecutionRequest.ephemeralPublicKey,
+          sweepExecutionRequest.destinationAddress,
+        );
+      }
+
+      // Step 4: Execute the classic Horizon payment to move funds.
+      let transactionResult: TransactionResult;
+      try {
+        transactionResult =
+          await this.transactionProvider.executeSweepTransaction({
+            ephemeralSecret: sweepExecutionRequest.ephemeralSecret,
+            destinationAddress: sweepExecutionRequest.destinationAddress,
+            amount: sweepExecutionRequest.amount,
+            asset: sweepExecutionRequest.asset,
+          });
+        this.sweepSuccessCounter.inc();
+      } catch (error) {
+        this.sweepFailureCounter.inc();
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        this.logger.error(
+          `PARTIAL sweep: contract authorized but Horizon payment failed for ` +
+            `account ${sweepExecutionRequest.accountId}. Contract auth hash: ` +
+            `${contractAuthHash}. Error: ${message}`,
+          stack,
+        );
+        this.sweepMetrics.recordFailed();
+
+        // Enqueue for retry (returns null for terminal errors)
+        const retryEntry = this.retryQueue.enqueue(
+          sweepExecutionRequest.accountId,
+          message,
+        );
+        if (retryEntry) {
+          this.logger.log(
+            `Sweep failed, enqueued for retry (${retryEntry.attempts}/${retryEntry.maxAttempts})`,
+          );
+        }
+
+        return {
+          success: false,
+          isPartial: true,
+          contractAuthHash,
+          amountSwept: sweepExecutionRequest.amount,
+          destination: sweepExecutionRequest.destinationAddress,
+          error: message,
+        };
+      }
+
+      // Step 5: AccountMerge — merge the ephemeral account into the destination
+      // to reclaim the minimum XLM reserve (currently 1 XLM). This is a
+      // best-effort operation.
+      let mergeHash: string | undefined;
+      try {
+        const mergeResult = await this.transactionProvider.mergeAccount({
           ephemeralSecret: sweepExecutionRequest.ephemeralSecret,
           destinationAddress: sweepExecutionRequest.destinationAddress,
-          amount: sweepExecutionRequest.amount,
-          asset: sweepExecutionRequest.asset,
         });
-      this.sweepSuccessCounter.inc();
-    } catch (error) {
-      this.sweepFailureCounter.inc();
-      const message = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
-      this.logger.error(
-        `PARTIAL sweep: contract authorized but Horizon payment failed for ` +
-          `account ${sweepExecutionRequest.accountId}. Contract auth hash: ` +
-          `${contractAuthHash}. Error: ${message}`,
-        stack,
-      );
-      this.sweepMetrics.recordFailed();
+        mergeHash = mergeResult.hash;
+        this.logger.log(
+          `AccountMerge successful for account ${sweepExecutionRequest.accountId}: ` +
+            `mergeHash=${mergeHash}`,
+        );
+      } catch (mergeError) {
+        const mergeMessage =
+          mergeError instanceof Error ? mergeError.message : String(mergeError);
+        this.logger.warn(
+          `AccountMerge failed (non-critical) for account ` +
+            `${sweepExecutionRequest.accountId}: ${mergeMessage}. ` +
+            `Main sweep txHash=${transactionResult.hash} was successful.`,
+        );
+      }
+
+      this.logger.log(`Sweep complete: txHash=${transactionResult.hash}`);
+      this.sweepMetrics.recordCompleted();
+
       return {
-        success: false,
-        isPartial: true,
+        success: true,
+        txHash: transactionResult.hash,
         contractAuthHash,
         amountSwept: sweepExecutionRequest.amount,
         destination: sweepExecutionRequest.destinationAddress,
-        error: message,
+        timestamp: transactionResult.timestamp,
+        ...(mergeHash !== undefined && { mergeHash }),
       };
-    }
-
-    // Step 5: AccountMerge — merge the ephemeral account into the destination
-    // to reclaim the minimum XLM reserve (currently 1 XLM). This is a
-    // best-effort operation: if it fails (e.g. the account still has open
-    // offers or trustlines), we log a warning and continue returning success.
-    // The main sweep (payment) has already completed at this point.
-    let mergeHash: string | undefined;
-    try {
-      const mergeResult = await this.transactionProvider.mergeAccount({
-        ephemeralSecret: sweepExecutionRequest.ephemeralSecret,
-        destinationAddress: sweepExecutionRequest.destinationAddress,
-      });
-      mergeHash = mergeResult.hash;
-      this.logger.log(
-        `AccountMerge successful for account ${sweepExecutionRequest.accountId}: ` +
-          `mergeHash=${mergeHash}`,
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const retryEntry = this.retryQueue.enqueue(
+        sweepExecutionRequest.accountId,
+        errorMsg,
       );
-    } catch (mergeError) {
-      // Non-fatal: the payment already moved the funds. The minimum reserve
-      // will remain in the ephemeral account. Log and continue.
-      const mergeMessage =
-        mergeError instanceof Error ? mergeError.message : String(mergeError);
-      this.logger.warn(
-        `AccountMerge failed (non-critical) for account ` +
-          `${sweepExecutionRequest.accountId}: ${mergeMessage}. ` +
-          `Main sweep txHash=${transactionResult.hash} was successful.`,
-      );
+      if (retryEntry) {
+        this.logger.log(
+          `Sweep failed, enqueued for retry (${retryEntry.attempts}/${retryEntry.maxAttempts})`,
+        );
+      }
+      throw error;
     }
-
-    this.logger.log(`Sweep complete: txHash=${transactionResult.hash}`);
-    this.sweepMetrics.recordCompleted();
-
-    return {
-      success: true,
-      txHash: transactionResult.hash,
-      contractAuthHash,
-      amountSwept: sweepExecutionRequest.amount,
-      destination: sweepExecutionRequest.destinationAddress,
-      timestamp: transactionResult.timestamp,
-      ...(mergeHash !== undefined && { mergeHash }),
-    };
   }
 
   /**

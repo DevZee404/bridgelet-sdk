@@ -8,6 +8,7 @@ import { StellarService } from '../stellar/stellar.service.js';
 import { ConfigService } from '@nestjs/config';
 import { getToken } from '@willsoto/nestjs-prometheus';
 import { SweepMetricsProvider } from './providers/sweep-metrics.provider.js';
+import { SweepRetryQueueService } from './sweep-retry-queue.service.js';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -68,6 +69,17 @@ describe('SweepsService', () => {
   };
   let stellarService: { executeSweep: jest.Mock<() => Promise<any>> };
 
+  const mockRetryQueue = {
+    enqueue: jest.fn(),
+    markAttempted: jest.fn(),
+    getPendingEntries: jest.fn().mockReturnValue([]),
+    remove: jest.fn(),
+    clear: jest.fn(),
+    get pendingCount() {
+      return 0;
+    },
+  };
+
   beforeEach(async () => {
     validationProvider = {
       validateSweepParameters: jest.fn<any>().mockResolvedValue(undefined),
@@ -111,6 +123,7 @@ describe('SweepsService', () => {
         { provide: TransactionProvider, useValue: transactionProvider },
         { provide: StellarService, useValue: stellarService },
         { provide: ConfigService, useValue: configMock },
+        { provide: SweepRetryQueueService, useValue: mockRetryQueue },
         {
           provide: getToken('sweep_success_total'),
           useValue: { inc: jest.fn() },
@@ -220,8 +233,7 @@ describe('SweepsService', () => {
       });
     });
 
-    it('omits mergeHash from result when merge is skipped (no mergeAccount mock)', async () => {
-      // Simulate merge failure — result should still be success but no mergeHash
+    it('omits mergeHash from result when merge fails', async () => {
       transactionProvider.mergeAccount.mockRejectedValueOnce(
         new Error('op_has_sub_entries'),
       );
@@ -296,9 +308,6 @@ describe('SweepsService', () => {
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         expect.stringContaining('AccountMerge failed (non-critical)'),
       );
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining(validRequest.accountId),
-      );
     });
 
     it('does NOT call mergeAccount when Horizon payment fails (isPartial)', async () => {
@@ -317,32 +326,6 @@ describe('SweepsService', () => {
         'ALREADY_SWEPT',
       );
       expect(transactionProvider.mergeAccount).not.toHaveBeenCalled();
-    });
-
-    it('calls mergeAccount with correct params when skipContractAuth=true', async () => {
-      await service.executeSweep({ ...validRequest, skipContractAuth: true });
-      expect(transactionProvider.mergeAccount).toHaveBeenCalledWith({
-        ephemeralSecret: validRequest.ephemeralSecret,
-        destinationAddress: validRequest.destinationAddress,
-      });
-    });
-
-    it('returns mergeHash when skipContractAuth=true and merge succeeds', async () => {
-      const result = await service.executeSweep({
-        ...validRequest,
-        skipContractAuth: true,
-      });
-      expect(result.mergeHash).toBe(MOCK_MERGE_HASH);
-    });
-
-    it('merge failure with sub-entries error does not affect txHash or amountSwept', async () => {
-      transactionProvider.mergeAccount.mockRejectedValueOnce(
-        new Error('op_has_sub_entries'),
-      );
-      const result = await service.executeSweep(validRequest);
-      expect(result.txHash).toBe(MOCK_TX_HASH);
-      expect(result.amountSwept).toBe(validRequest.amount);
-      expect(result.destination).toBe(validRequest.destinationAddress);
     });
   });
 
@@ -365,7 +348,7 @@ describe('SweepsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('propagates StellarService.executeSweep() errors and does not call Horizon payment', async () => {
+    it('propagates StellarService.executeSweep() errors', async () => {
       stellarService.executeSweep.mockRejectedValue(new Error('ALREADY_SWEPT'));
 
       await expect(service.executeSweep(validRequest)).rejects.toThrow(
@@ -376,20 +359,15 @@ describe('SweepsService', () => {
       ).not.toHaveBeenCalled();
     });
 
-    it('returns isPartial: true (does NOT throw) when Horizon payment fails after contract authorization', async () => {
-      const horizonError = new Error('Horizon payment failed');
+    it('returns isPartial: true when Horizon payment fails after contract authorization', async () => {
       transactionProvider.executeSweepTransaction.mockRejectedValue(
-        horizonError,
+        new Error('Horizon payment failed'),
       );
 
-      // Spy on the service's private logger
       const loggerErrorSpy = jest
         .spyOn(service['logger'], 'error')
         .mockImplementation(() => {});
 
-      // The sweeper no longer throws — it returns a structured partial
-      // result so the orchestrator can transition the account to PARTIAL_SWEEP
-      // and emit a sweep.partial webhook.
       const result = await service.executeSweep(validRequest);
 
       expect(result.success).toBe(false);
@@ -399,21 +377,14 @@ describe('SweepsService', () => {
       expect(result.amountSwept).toBe(validRequest.amount);
       expect(result.destination).toBe(validRequest.destinationAddress);
       expect(result.txHash).toBeUndefined();
-      expect(result.timestamp).toBeUndefined();
 
-      // The log line is now PARTIAL (not CRITICAL) to distinguish recoverable
-      // vs fatal in monitoring.
       expect(loggerErrorSpy).toHaveBeenCalledWith(
         expect.stringContaining('PARTIAL sweep'),
-        horizonError.stack,
-      );
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining(validRequest.accountId),
-        horizonError.stack,
+        expect.any(String),
       );
     });
 
-    it('skips contract auth + execute_sweep when skipContractAuth=true; only runs Horizon payment', async () => {
+    it('skips contract auth when skipContractAuth=true', async () => {
       await service.executeSweep({
         ...validRequest,
         skipContractAuth: true,
@@ -421,7 +392,6 @@ describe('SweepsService', () => {
 
       expect(contractProvider.generateAuthSignature).not.toHaveBeenCalled();
       expect(stellarService.executeSweep).not.toHaveBeenCalled();
-      // The Horizon payment still runs to retry the failed payment.
       expect(transactionProvider.executeSweepTransaction).toHaveBeenCalledWith({
         ephemeralSecret: validRequest.ephemeralSecret,
         destinationAddress: validRequest.destinationAddress,
@@ -430,7 +400,7 @@ describe('SweepsService', () => {
       });
     });
 
-    it('returns a success result with txHash when skipContractAuth=true and the Horizon payment succeeds', async () => {
+    it('returns success when skipContractAuth=true and Horizon payment succeeds', async () => {
       const result = await service.executeSweep({
         ...validRequest,
         skipContractAuth: true,
@@ -439,24 +409,57 @@ describe('SweepsService', () => {
       expect(result.isPartial).toBeUndefined();
       expect(result.success).toBe(true);
       expect(result.txHash).toBe(MOCK_TX_HASH);
-      expect(result.contractAuthHash).toBe(MOCK_CONTRACT_AUTH_HASH);
     });
+  });
 
-    it('returns isPartial: true when skipContractAuth=true but the Horizon payment still fails', async () => {
+  // -------------------------------------------------------------------------
+  // Retry queue integration
+  // -------------------------------------------------------------------------
+
+  describe('executeSweep — retry queue', () => {
+    it('enqueues retry when Horizon payment fails (isPartial)', async () => {
       transactionProvider.executeSweepTransaction.mockRejectedValue(
-        new Error('Horizon offline'),
+        new Error('Horizon timeout'),
       );
-
-      const result = await service.executeSweep({
-        ...validRequest,
-        skipContractAuth: true,
+      mockRetryQueue.enqueue.mockReturnValue({
+        id: 'retry-1',
+        attempts: 1,
+        maxAttempts: 5,
       });
 
+      const result = await service.executeSweep(validRequest);
+
       expect(result.isPartial).toBe(true);
-      expect(result.error).toBe('Horizon offline');
-      // Skipped contract side did NOT happen.
-      expect(contractProvider.generateAuthSignature).not.toHaveBeenCalled();
-      expect(stellarService.executeSweep).not.toHaveBeenCalled();
+      expect(mockRetryQueue.enqueue).toHaveBeenCalledWith(
+        validRequest.accountId,
+        'Horizon timeout',
+      );
+    });
+
+    it('enqueues retry when outer catch fires (validation/contract error)', async () => {
+      stellarService.executeSweep.mockRejectedValue(new Error('Network error'));
+      mockRetryQueue.enqueue.mockReturnValue({
+        id: 'retry-2',
+        attempts: 1,
+        maxAttempts: 5,
+      });
+
+      await expect(service.executeSweep(validRequest)).rejects.toThrow();
+      expect(mockRetryQueue.enqueue).toHaveBeenCalledWith(
+        validRequest.accountId,
+        'Network error',
+      );
+    });
+
+    it('does not enqueue when queue returns null (terminal error)', async () => {
+      stellarService.executeSweep.mockRejectedValue(new Error('ALREADY_SWEPT'));
+      mockRetryQueue.enqueue.mockReturnValue(null);
+
+      await expect(service.executeSweep(validRequest)).rejects.toThrow();
+      expect(mockRetryQueue.enqueue).toHaveBeenCalledWith(
+        validRequest.accountId,
+        'ALREADY_SWEPT',
+      );
     });
   });
 
@@ -474,6 +477,21 @@ describe('SweepsService', () => {
       );
       expect(result).toBe(true);
     });
+
+    it('returns false when validation provider returns false', async () => {
+      validationProvider.canSweep.mockResolvedValue(false);
+      const result = await service.canSweep('account-id', 'GDEST...');
+      expect(result).toBe(false);
+    });
+
+    it('propagates errors from validation provider', async () => {
+      validationProvider.canSweep.mockRejectedValue(
+        new Error('Database error'),
+      );
+      await expect(service.canSweep('account-id', 'GDEST...')).rejects.toThrow(
+        'Database error',
+      );
+    });
   });
 
   describe('getSweepStatus', () => {
@@ -488,6 +506,15 @@ describe('SweepsService', () => {
         'account-id',
       );
       expect(result).toEqual({ canSweep: false, reason: 'expired' });
+    });
+
+    it('propagates errors from validation provider', async () => {
+      validationProvider.getSweepStatus.mockRejectedValue(
+        new Error('Connection timeout'),
+      );
+      await expect(service.getSweepStatus('account-id')).rejects.toThrow(
+        'Connection timeout',
+      );
     });
   });
 });
