@@ -33,6 +33,17 @@ export class StellarService {
    * Stellar closes a ledger approximately every 5 seconds.
    * Conversion: expiry_ledger = current_ledger + Math.ceil(expiresInSeconds / 5)
    */
+  async getSorobanLatestLedger(): Promise<{
+    sequence: number;
+    hash: string;
+  }> {
+    const info = await this.sorobanServer.getLatestLedger();
+    return {
+      sequence: info.sequence,
+      hash: info.hash,
+    };
+  }
+
   async getCurrentLedger(): Promise<number> {
     const ledgerPage = await this.server
       .ledgers()

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ValidationProvider } from './providers/validation.provider.js';
 import { ContractProvider } from './providers/contract.provider.js';
 import type { SweepExecutionRequest } from './interfaces/execute-sweep.interface.js';
@@ -11,6 +12,7 @@ export class SweepsService {
   constructor(
     private readonly validationProvider: ValidationProvider,
     private readonly contractProvider: ContractProvider,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -19,33 +21,69 @@ export class SweepsService {
   public async executeSweep(
     sweepExecutionRequest: SweepExecutionRequest,
   ): Promise<SweepResult> {
+    const { dryRun = false } = sweepExecutionRequest;
     this.logger.log(
-      `Executing sweep for account: ${sweepExecutionRequest.accountId}`,
+      `Executing sweep for account: ${sweepExecutionRequest.accountId}${dryRun ? ' (dry-run)' : ''}`,
     );
 
-    // Step 1: Validate sweep parameters
-    await this.validationProvider.validateSweepParameters(
-      sweepExecutionRequest,
-    );
+    try {
+      // Step 1: Validate sweep parameters
+      await this.validationProvider.validateSweepParameters(
+        sweepExecutionRequest,
+      );
 
-    // Step 2: Authorize sweep via contract
-    const authResult = await this.contractProvider.authorizeSweep({
-      ephemeralPublicKey: sweepExecutionRequest.ephemeralPublicKey,
-      destinationAddress: sweepExecutionRequest.destinationAddress,
-    });
+      // Step 2: Authorize sweep via contract
+      const authResult = await this.contractProvider.authorizeSweep({
+        ephemeralPublicKey: sweepExecutionRequest.ephemeralPublicKey,
+        destinationAddress: sweepExecutionRequest.destinationAddress,
+      });
 
-    // TODO: Step 3 - Execute transaction (another issue)
+      if (dryRun) {
+        this.logger.log('Dry-run sweep — simulation complete, no transaction submitted');
+        const result: SweepResult = {
+          success: true,
+          txHash: 'dry-run',
+          contractAuthHash: authResult.hash,
+          amountSwept: sweepExecutionRequest.amount,
+          destination: sweepExecutionRequest.destinationAddress,
+          timestamp: new Date(),
+        };
+        this.eventEmitter.emit('sweep.completed', {
+          txHash: result.txHash,
+          amounts: result.amountSwept,
+        });
+        return result;
+      }
 
-    this.logger.log('Sweep authorization completed');
+      // TODO: Step 3 - Execute transaction (another issue)
 
-    return {
-      success: true,
-      txHash: 'pending',
-      contractAuthHash: authResult.hash,
-      amountSwept: sweepExecutionRequest.amount,
-      destination: sweepExecutionRequest.destinationAddress,
-      timestamp: new Date(),
-    };
+      this.logger.log('Sweep authorization completed');
+
+      const result: SweepResult = {
+        success: true,
+        txHash: 'pending',
+        contractAuthHash: authResult.hash,
+        amountSwept: sweepExecutionRequest.amount,
+        destination: sweepExecutionRequest.destinationAddress,
+        timestamp: new Date(),
+      };
+
+      this.eventEmitter.emit('sweep.completed', {
+        txHash: result.txHash,
+        amounts: result.amountSwept,
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Sweep failed for account ${sweepExecutionRequest.accountId}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+      this.eventEmitter.emit('sweep.failed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        retryCount: 0,
+      });
+      throw error;
+    }
   }
 
   /**

@@ -6,6 +6,8 @@ import { ValidationProvider } from './providers/validation.provider.js';
 
 import { ContractProvider } from './providers/contract.provider.js';
 
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
 describe('SweepsService', () => {
   let service: SweepsService;
 
@@ -19,6 +21,10 @@ describe('SweepsService', () => {
 
   const mockContractProvider = {
     authorizeSweep: jest.fn(),
+  };
+
+  const mockEventEmitter = {
+    emit: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -36,6 +42,11 @@ describe('SweepsService', () => {
           provide: ContractProvider,
 
           useValue: mockContractProvider,
+        },
+        {
+          provide: EventEmitter2,
+
+          useValue: mockEventEmitter,
         },
       ],
     }).compile();
@@ -97,6 +108,11 @@ describe('SweepsService', () => {
 
         timestamp: expect.any(Date),
       });
+
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith('sweep.completed', {
+        txHash: 'pending',
+        amounts: validDto.amount,
+      });
     });
 
     it('should call validation provider first', async () => {
@@ -135,6 +151,11 @@ describe('SweepsService', () => {
       await expect(service.executeSweep(validDto)).rejects.toThrow(
         'Validation failed',
       );
+
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith('sweep.failed', {
+        error: 'Validation failed',
+        retryCount: 0,
+      });
     });
 
     it('should propagate contract errors', async () => {
@@ -145,6 +166,22 @@ describe('SweepsService', () => {
       await expect(service.executeSweep(validDto)).rejects.toThrow(
         'Contract failed',
       );
+
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith('sweep.failed', {
+        error: 'Contract failed',
+        retryCount: 0,
+      });
+    });
+
+    it('should simulate sweep without submitting in dry-run mode', async () => {
+      const dryRunDto = { ...validDto, dryRun: true };
+      const result = await service.executeSweep(dryRunDto);
+
+      expect(result.txHash).toBe('dry-run');
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith('sweep.completed', {
+        txHash: 'dry-run',
+        amounts: dryRunDto.amount,
+      });
     });
   });
 

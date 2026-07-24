@@ -5,4 +5,5 @@ export interface SweepExecutionRequest {
   destinationAddress: string;
   amount: string;
   asset: string;
+  dryRun?: boolean;
 }
