@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
+import { LogSanitizer } from '../../common/utils/log-sanitizer.util.js';
 
 export const EXPIRY_BUFFER_LEDGERS = 10;
 
@@ -85,7 +86,9 @@ export class StellarService {
     contractId: string; // deployed EphemeralAccount contract address
     fundingKeypairSecret?: string; // optional override for testing
   }): Promise<string> {
-    this.logger.log(`Creating ephemeral account: ${params.publicKey}`);
+    this.logger.log(
+      `Creating ephemeral account: ${LogSanitizer.redactAddress(params.publicKey)}`,
+    );
 
     const fundingSecret =
       params.fundingKeypairSecret ??
@@ -295,7 +298,7 @@ export class StellarService {
 
     await this.waitForTransaction(result.hash);
     this.logger.log(
-      `Sweep executed: ${params.ephemeralAccountContractId} → ${params.destination}`,
+      `Sweep executed: ${params.ephemeralAccountContractId} → ${LogSanitizer.redactAddress(params.destination)}`,
     );
   }
 

@@ -15,6 +15,7 @@ import { TokenVerificationProvider } from './token-verification.provider.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
 import { SecretEncryptionUtil } from '../../../common/crypto/secret-encryption.util.js';
 import { ConfigService } from '@nestjs/config';
+import { LogSanitizer } from '../../../common/utils/log-sanitizer.util.js';
 
 @Injectable()
 export class ClaimRedemptionProvider {
@@ -36,7 +37,9 @@ export class ClaimRedemptionProvider {
     token: string,
     destinationAddress: string,
   ): Promise<ClaimRedemptionResponseDto> {
-    this.logger.log(`Redeeming claim for destination: ${destinationAddress}`);
+    this.logger.log(
+      `Redeeming claim for destination: ${LogSanitizer.redactAddress(destinationAddress)}`,
+    );
 
     // Verify token first
     // In claim-redemption.provider.ts redeemClaim method:

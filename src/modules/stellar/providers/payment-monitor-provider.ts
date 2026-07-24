@@ -6,6 +6,7 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import { StellarService } from '../stellar.service.js';
 import { Account } from '../../../modules/accounts/entities/account.entity.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
+import { LogSanitizer } from '../../../common/utils/log-sanitizer.util.js';
 
 /**
  * PaymentMonitorProvider - Horizon SSE-based payment detection
@@ -53,13 +54,13 @@ export class PaymentMonitorProvider implements OnModuleDestroy {
   watch(account: Account): void {
     if (this.streams.has(account.id)) {
       this.logger.debug(
-        `Already watching account ${account.id} (${account.publicKey})`,
+        `Already watching account ${account.id} (${LogSanitizer.redactAddress(account.publicKey)})`,
       );
       return;
     }
 
     this.logger.log(
-      `Starting payment stream for account ${account.id} (${account.publicKey})`,
+      `Starting payment stream for account ${account.id} (${LogSanitizer.redactAddress(account.publicKey)})`,
     );
 
     const closeStream = this.horizonServer
@@ -149,7 +150,7 @@ export class PaymentMonitorProvider implements OnModuleDestroy {
 
     this.logger.log(
       `Inbound payment detected for account ${account.id}: ` +
-        `${record.amount} ${record.asset_code ?? 'XLM'} from ${record.from}`,
+        `${record.amount} ${record.asset_code ?? 'XLM'} from ${LogSanitizer.redactAddress(record.from)}`,
     );
 
     const contractId = this.configService.getOrThrow<string>(
