@@ -437,9 +437,7 @@ describe('SweepsService', () => {
     });
 
     it('enqueues retry when outer catch fires (validation/contract error)', async () => {
-      stellarService.executeSweep.mockRejectedValue(
-        new Error('Network error'),
-      );
+      stellarService.executeSweep.mockRejectedValue(new Error('Network error'));
       mockRetryQueue.enqueue.mockReturnValue({
         id: 'retry-2',
         attempts: 1,
@@ -454,9 +452,7 @@ describe('SweepsService', () => {
     });
 
     it('does not enqueue when queue returns null (terminal error)', async () => {
-      stellarService.executeSweep.mockRejectedValue(
-        new Error('ALREADY_SWEPT'),
-      );
+      stellarService.executeSweep.mockRejectedValue(new Error('ALREADY_SWEPT'));
       mockRetryQueue.enqueue.mockReturnValue(null);
 
       await expect(service.executeSweep(validRequest)).rejects.toThrow();
@@ -492,9 +488,9 @@ describe('SweepsService', () => {
       validationProvider.canSweep.mockRejectedValue(
         new Error('Database error'),
       );
-      await expect(
-        service.canSweep('account-id', 'GDEST...'),
-      ).rejects.toThrow('Database error');
+      await expect(service.canSweep('account-id', 'GDEST...')).rejects.toThrow(
+        'Database error',
+      );
     });
   });
 

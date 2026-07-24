@@ -69,15 +69,12 @@ export class SweepRetryQueueService {
    * Start the retry drain timer.  Call `onRetry` for each entry whose
    * `nextRetryAt` has been reached.
    */
-  startDrainTimer(
-    callback: (entry: SweepRetryEntry) => Promise<void>,
-  ): void {
+  startDrainTimer(callback: (entry: SweepRetryEntry) => Promise<void>): void {
     if (this.drainTimer) return;
     this.onRetry = callback;
-    this.drainTimer = setInterval(
-      () => this.drain(),
-      SweepRetryQueueService.DRAIN_INTERVAL_MS,
-    );
+    this.drainTimer = setInterval(() => {
+      void this.drain();
+    }, SweepRetryQueueService.DRAIN_INTERVAL_MS);
     this.logger.log('Sweep retry drain timer started');
   }
 
@@ -140,7 +137,11 @@ export class SweepRetryQueueService {
    * remove it from the queue.  If it failed again, reschedule with exponential
    * backoff or mark as terminal.
    */
-  markAttempted(entry: SweepRetryEntry, success: boolean, error?: string): void {
+  markAttempted(
+    entry: SweepRetryEntry,
+    success: boolean,
+    error?: string,
+  ): void {
     if (success) {
       this.queue.delete(entry.id);
       this.logger.log(
@@ -214,9 +215,10 @@ export class SweepRetryQueueService {
     for (const entry of ready) {
       try {
         await this.onRetry(entry);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         this.logger.error(
-          `Retry callback failed for ${entry.accountId}: ${err.message}`,
+          `Retry callback failed for ${entry.accountId}: ${message}`,
         );
       }
     }

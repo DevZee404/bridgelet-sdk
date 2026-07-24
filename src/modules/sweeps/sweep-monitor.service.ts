@@ -72,7 +72,7 @@ export class SweepMonitorService implements OnModuleDestroy {
             hash: tx.hash,
             accountId,
             status: tx.successful ? 'success' : 'failed',
-            ledger: tx.ledger,
+            ledger: tx.ledger as unknown as number,
             resultCode: tx.result_xdr ?? undefined,
             timestamp: new Date(),
           };
@@ -84,23 +84,29 @@ export class SweepMonitorService implements OnModuleDestroy {
           callback(update);
           this.activeStreams.delete(txHash);
         },
-        onerror: (err: Error) => {
+        onerror: (err: unknown) => {
+          const message =
+            typeof err === 'string'
+              ? err
+              : err instanceof Error
+                ? err.message
+                : 'Unknown stream error';
           this.logger.error(
-            `Horizon stream error for tx ${txHash}: ${err.message}`,
+            `Horizon stream error for tx ${txHash}: ${message}`,
           );
 
           const update: SweepTransactionUpdate = {
             hash: txHash,
             accountId,
             status: 'failed',
-            error: err.message,
+            error: message,
             timestamp: new Date(),
           };
 
           callback(update);
           this.activeStreams.delete(txHash);
         },
-      }) as unknown as () => void;
+      });
 
     this.activeStreams.set(txHash, closeFn);
   }
@@ -152,7 +158,7 @@ export class SweepMonitorService implements OnModuleDestroy {
    * Stop all active streams.  Called during graceful shutdown.
    */
   stopAll(): void {
-    for (const [hash, closeFn] of this.activeStreams) {
+    for (const [, closeFn] of this.activeStreams) {
       try {
         closeFn();
       } catch {

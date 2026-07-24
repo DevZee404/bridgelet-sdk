@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SweepsService } from './sweeps.service.js';
-import { SweepsController } from './sweeps.controller.js';
 import { ValidationProvider } from './providers/validation.provider.js';
 import { TransactionProvider } from './providers/transaction.provider.js';
 import { ContractProvider } from './providers/contract.provider.js';
@@ -23,7 +22,6 @@ const sweepFailureCounter = makeCounterProvider({
 
 @Module({
   imports: [TypeOrmModule.forFeature([Account]), StellarModule],
-  controllers: [SweepsController],
   providers: [
     SweepsService,
     ValidationProvider,

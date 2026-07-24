@@ -91,9 +91,10 @@ export class SweepsService {
         const sweepControllerContractId = this.configService.getOrThrow<string>(
           'stellar.contracts.sweepController',
         );
-        const ephemeralAccountContractId = this.configService.getOrThrow<string>(
-          'stellar.contracts.ephemeralAccount',
-        );
+        const ephemeralAccountContractId =
+          this.configService.getOrThrow<string>(
+            'stellar.contracts.ephemeralAccount',
+          );
 
         await this.stellarService.executeSweep({
           sweepControllerContractId,
@@ -193,8 +194,8 @@ export class SweepsService {
         timestamp: transactionResult.timestamp,
         ...(mergeHash !== undefined && { mergeHash }),
       };
-    } catch (error: any) {
-      const errorMsg = error.message ?? String(error);
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
       const retryEntry = this.retryQueue.enqueue(
         sweepExecutionRequest.accountId,
         errorMsg,

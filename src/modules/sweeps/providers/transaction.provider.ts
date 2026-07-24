@@ -13,7 +13,7 @@ import {
   BASE_FEE,
   Networks,
 } from '@stellar/stellar-sdk';
-import type { Transaction } from '@stellar/stellar-sdk';
+import { Transaction } from '@stellar/stellar-sdk';
 import type { ExecuteTransactionParams } from '../interfaces/execute-transaction-params.interface.js';
 import type { TransactionResult } from '../interfaces/transaction-result.interface.js';
 import type { MergeAccountParams } from '../interfaces/merge-account-params.interface.js';
@@ -297,21 +297,19 @@ export class TransactionProvider {
 
     try {
       const feePayerKeypair = Keypair.fromSecret(feePayerSecret);
-      const feePayerAccount = await this.server.loadAccount(
-        feePayerKeypair.publicKey(),
-      );
 
       // Deserialize the inner transaction envelope
-      const innerTx = new Transaction(innerEnvelopeBase64, this.networkPassphrase);
+      const innerTx = new Transaction(
+        innerEnvelopeBase64,
+        this.networkPassphrase,
+      );
 
       // Build fee-bump transaction
       const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(
         feePayerKeypair.publicKey(),
+        bumpFee.toString(),
         innerTx,
         this.networkPassphrase,
-        {
-          fee: bumpFee,
-        },
       );
 
       feeBumpTx.sign(feePayerKeypair);
