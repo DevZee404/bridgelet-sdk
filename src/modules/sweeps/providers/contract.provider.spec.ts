@@ -18,6 +18,8 @@ import { ContractAuthResult } from '../interfaces/contract-auth-result.interface
 import { AuthorizeSweepParams } from '../interfaces/authorize-sweep-params.interface.js';
 import { SweepSignerUtil } from '../../../common/crypto/sweep-signer.util.js';
 
+// Note: testing mocks are defined inline in this spec to avoid module resolution issues
+
 // Mock the Stellar SDK
 const mockServer = {
   getAccount: jest.fn<Promise<Account>, [string]>(),
