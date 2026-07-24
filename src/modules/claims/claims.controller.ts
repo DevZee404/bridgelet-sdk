@@ -6,7 +6,7 @@ import {
   ApiParam,
   ApiBody,
 } from '@nestjs/swagger';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { ClaimsService } from './claims.service.js';
 import { ClaimDetailsDto } from './dto/claim-details.dto.js';
 import { VerifyClaimDto } from './dto/verify-claim.dto.js';
@@ -38,6 +38,7 @@ export class ClaimsController {
   }
 
   @Post('verify')
+  @Throttle({ default: { limit: 20, ttl: 60000 } }) // 20 requests/min per API key
   @ApiOperation({ summary: 'Verify claim token validity' })
   @ApiResponse({
     status: 200,
@@ -58,6 +59,7 @@ export class ClaimsController {
   }
 
   @Post('redeem')
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 requests/min per IP
   @ApiOperation({
     summary: 'Redeem claim and sweep funds to destination wallet',
   })
