@@ -2,7 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
-import { StellarService, EXPIRY_BUFFER_LEDGERS } from './stellar.service.js';
+import {
+  StellarService,
+  EXPIRY_BUFFER_LEDGERS,
+  LEDGER_CACHE_TTL_MS,
+} from './stellar.service.js';
 import { getToken } from '@willsoto/nestjs-prometheus';
 
 const mockConfigService = {
@@ -99,6 +103,41 @@ describe('StellarService', () => {
     it('fetches the most recent ledger (order desc, limit 1)', async () => {
       await service.getCurrentLedger();
       expect(horizonServer.ledgers).toHaveBeenCalled();
+    });
+
+    it('returns the cached sequence on a second call within TTL', async () => {
+      await service.getCurrentLedger(); // populates cache
+      await service.getCurrentLedger(); // should use cache
+      // Horizon should only have been called once
+      expect(horizonServer.ledgers).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-fetches from Horizon after the cache TTL expires', async () => {
+      jest.useFakeTimers();
+      try {
+        horizonServer = makeLedgerServer(1000);
+        (
+          service as unknown as { server: unknown; sorobanServer: unknown }
+        ).server = horizonServer;
+
+        await service.getCurrentLedger(); // populates cache — 1 call
+        jest.advanceTimersByTime(LEDGER_CACHE_TTL_MS + 1); // expire the cache
+        await service.getCurrentLedger(); // should re-fetch — 2nd call
+        expect(horizonServer.ledgers).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('invalidateLedgerCache forces a fresh fetch on next call', async () => {
+      await service.getCurrentLedger(); // populates cache — 1 call
+      service.invalidateLedgerCache();
+      await service.getCurrentLedger(); // cache cleared — 2nd call
+      expect(horizonServer.ledgers).toHaveBeenCalledTimes(2);
+    });
+
+    it('LEDGER_CACHE_TTL_MS constant is 5000', () => {
+      expect(LEDGER_CACHE_TTL_MS).toBe(5_000);
     });
   });
 
