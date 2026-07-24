@@ -70,6 +70,21 @@ This is a **temporary stabilization** to enable local development and onboarding
 - **Blockchain:** Stellar SDK + Soroban RPC
 - **API:** REST api
 
+### Stellar SDK Version
+
+`@stellar/stellar-sdk` is pinned to an **exact version** (`14.6.1`) in `package.json` — no caret or tilde range — for the following reasons:
+
+- The SDK exposes raw Stellar XDR and Soroban RPC types. A minor or patch bump can change serialization behaviour, breaking transaction building or contract call encoding in ways that are difficult to detect without end-to-end tests against a live network.
+- Exact pinning makes the dependency tree fully reproducible across developer machines and CI without relying on lock-file-only guarantees.
+
+**Upgrade process:**
+
+1. Update the version in `package.json` to the new exact version.
+2. Run `npm install` to update `package-lock.json`.
+3. Run the full test suite: `npm test`.
+4. Manually test account creation, sweep, and expiry flows against **testnet** before merging.
+5. Only promote to production after all testnet checks pass.
+
 ## Features
 
 - Account lifecycle management (create, claim, expire)
