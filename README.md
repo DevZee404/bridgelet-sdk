@@ -78,6 +78,7 @@ This is a **temporary stabilization** to enable local development and onboarding
 - Exact pinning makes the dependency tree fully reproducible across developer machines and CI without relying on lock-file-only guarantees.
 
 **Upgrade process:**
+
 1. Update the version in `package.json` to the new exact version.
 2. Run `npm install` to update `package-lock.json`.
 3. Run the full test suite: `npm test`.
