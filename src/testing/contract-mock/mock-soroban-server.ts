@@ -13,15 +13,15 @@ export const mockSorobanServer = {
   getTransaction: jest.fn(),
 
   getEvents: jest.fn(),
-
-  reset() {
-    this.getAccount.mockReset();
-    this.simulateTransaction.mockReset();
-    this.sendTransaction.mockReset();
-    this.getTransaction.mockReset();
-    this.getEvents.mockReset();
-  },
 };
+
+export function resetMockSorobanServer() {
+  mockSorobanServer.getAccount.mockReset();
+  mockSorobanServer.simulateTransaction.mockReset();
+  mockSorobanServer.sendTransaction.mockReset();
+  mockSorobanServer.getTransaction.mockReset();
+  mockSorobanServer.getEvents.mockReset();
+}
 
 export const mockContract = {
   call: jest.fn<Operation, [string, ...unknown[]]>(),
