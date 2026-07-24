@@ -4,6 +4,10 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Histogram } from 'prom-client';
+import {
+  redactSecrets,
+  sanitizeErrorMessage,
+} from '../../common/utils/secret-redaction.util.js';
 
 export const EXPIRY_BUFFER_LEDGERS = 10;
 
@@ -11,8 +15,10 @@ export const EXPIRY_BUFFER_LEDGERS = 10;
 export class StellarService {
   private readonly logger = new Logger(StellarService.name);
   private server: StellarSdk.Horizon.Server;
+  private fallbackServer: StellarSdk.Horizon.Server | null = null;
   private sorobanServer: SorobanRpc.Server;
   private network: string;
+  private primaryHorizonHealthy = true;
 
   constructor(
     private configService: ConfigService,
@@ -21,6 +27,9 @@ export class StellarService {
   ) {
     const horizonUrl =
       this.configService.getOrThrow<string>('stellar.horizonUrl');
+    const horizonFallbackUrl = this.configService.get<string>(
+      'stellar.horizonFallbackUrl',
+    );
     const sorobanRpcUrl = this.configService.getOrThrow<string>(
       'stellar.sorobanRpcUrl',
     );
@@ -28,7 +37,38 @@ export class StellarService {
     this.server = new StellarSdk.Horizon.Server(horizonUrl);
     this.sorobanServer = new SorobanRpc.Server(sorobanRpcUrl);
 
+    if (horizonFallbackUrl) {
+      this.fallbackServer = new StellarSdk.Horizon.Server(horizonFallbackUrl);
+      this.logger.log(
+        `Horizon fallback configured: ${horizonFallbackUrl}`,
+      );
+    }
+
     this.logger.log(`Initialized Stellar service for ${this.network}`);
+  }
+
+  /**
+   * Returns the active Horizon server. If the primary is known to be
+   * unhealthy and a fallback is configured, the fallback is returned.
+   */
+  private getActiveHorizonServer(): StellarSdk.Horizon.Server {
+    if (!this.primaryHorizonHealthy && this.fallbackServer) {
+      return this.fallbackServer;
+    }
+    return this.server;
+  }
+
+  /**
+   * Health-check probe against the primary Horizon server.
+   * Called after a failure to determine whether to switch to the fallback.
+   */
+  private async checkPrimaryHorizonHealth(): Promise<boolean> {
+    try {
+      await this.server.ledgers().limit(1).call();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -40,15 +80,39 @@ export class StellarService {
    * Conversion: expiry_ledger = current_ledger + Math.ceil(expiresInSeconds / 5)
    */
   async getCurrentLedger(): Promise<number> {
-    const ledgerPage = await this.server
-      .ledgers()
-      .order('desc')
-      .limit(1)
-      .call();
+    try {
+      const server = this.getActiveHorizonServer();
+      const ledgerPage = await server
+        .ledgers()
+        .order('desc')
+        .limit(1)
+        .call();
 
-    const sequence = ledgerPage.records[0].sequence;
-    this.logger.debug(`Current ledger sequence: ${sequence}`);
-    return sequence;
+      const sequence = ledgerPage.records[0].sequence;
+      this.logger.debug(`Current ledger sequence: ${sequence}`);
+      this.primaryHorizonHealthy = true;
+      return sequence;
+    } catch (error) {
+      if (!this.primaryHorizonHealthy || !this.fallbackServer) {
+        throw error;
+      }
+      this.logger.warn(
+        'Primary Horizon unreachable, running health check before failover',
+      );
+      this.primaryHorizonHealthy = await this.checkPrimaryHorizonHealth();
+      if (this.primaryHorizonHealthy) {
+        throw error;
+      }
+      this.logger.warn('Primary Horizon unhealthy — failing over to fallback');
+      const ledgerPage = await this.fallbackServer
+        .ledgers()
+        .order('desc')
+        .limit(1)
+        .call();
+      const sequence = ledgerPage.records[0].sequence;
+      this.logger.debug(`Current ledger sequence (fallback): ${sequence}`);
+      return sequence;
+    }
   }
 
   /**
@@ -100,7 +164,7 @@ export class StellarService {
     const fundingKeypair = StellarSdk.Keypair.fromSecret(fundingSecret);
 
     // Step 1: Create account on Stellar classic (Horizon)
-    const fundingAccount = await this.server.loadAccount(
+    const fundingAccount = await this.getActiveHorizonServer().loadAccount(
       fundingKeypair.publicKey(),
     );
 
@@ -161,11 +225,14 @@ export class StellarService {
     }
 
     if (initResult.status === 'ERROR') {
+      const errorDetail = sanitizeErrorMessage(
+        JSON.stringify(initResult.errorResult ?? 'unknown'),
+      );
       this.logger.error(
-        `Contract initialize() failed for ${params.publicKey}: ${JSON.stringify(initResult.errorResult)}`,
+        `Contract initialize() failed for ${params.publicKey}: ${errorDetail}`,
       );
       throw new Error(
-        `Contract initialization failed: ${JSON.stringify(initResult.errorResult ?? 'unknown')}`,
+        `Contract initialization failed for ${params.publicKey}`,
       );
     }
 
@@ -237,11 +304,14 @@ export class StellarService {
     }
 
     if (result.status === 'ERROR') {
+      const errorDetail = sanitizeErrorMessage(
+        JSON.stringify(result.errorResult ?? 'unknown'),
+      );
       this.logger.error(
-        `record_payment failed for contract ${params.contractId}: ${JSON.stringify(result.errorResult)}`,
+        `record_payment failed for contract ${params.contractId}: ${errorDetail}`,
       );
       throw new Error(
-        `record_payment failed: ${JSON.stringify(result.errorResult ?? 'unknown')}`,
+        `record_payment failed for contract ${params.contractId}`,
       );
     }
 
@@ -310,7 +380,7 @@ export class StellarService {
     }
 
     if (result.status === 'ERROR') {
-      const errStr = JSON.stringify(result.errorResult);
+      const errStr = sanitizeErrorMessage(JSON.stringify(result.errorResult));
       this.logger.error(
         `execute_sweep failed for ${params.ephemeralAccountContractId}: ${errStr}`,
       );
@@ -319,7 +389,7 @@ export class StellarService {
       if (errStr.includes('AlreadySwept')) throw new Error('ALREADY_SWEPT');
       if (errStr.includes('AccountExpired')) throw new Error('ACCOUNT_EXPIRED');
 
-      throw new Error(`execute_sweep failed: ${errStr}`);
+      throw new Error(`execute_sweep failed for ${params.ephemeralAccountContractId}`);
     }
 
     await this.waitForTransaction(result.hash);
@@ -385,7 +455,7 @@ export class StellarService {
     }
 
     if (result.status === 'ERROR') {
-      const errStr = JSON.stringify(result.errorResult);
+      const errStr = sanitizeErrorMessage(JSON.stringify(result.errorResult));
       if (errStr.includes('InvalidStatus')) {
         throw new Error('ACCOUNT_ALREADY_TERMINAL');
       }

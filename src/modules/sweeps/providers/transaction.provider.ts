@@ -13,6 +13,11 @@ import {
   BASE_FEE,
   Networks,
 } from '@stellar/stellar-sdk';
+import {
+  redactSecrets,
+  sanitizeErrorMessage,
+  sanitizeStackTrace,
+} from '../../../common/utils/secret-redaction.util.js';
 import type { ExecuteTransactionParams } from '../interfaces/execute-transaction-params.interface.js';
 import type { TransactionResult } from '../interfaces/transaction-result.interface.js';
 import type { MergeAccountParams } from '../interfaces/merge-account-params.interface.js';
@@ -50,6 +55,7 @@ const FEE_CACHE_TTL_MS = 60_000;
 export class TransactionProvider {
   private readonly logger = new Logger(TransactionProvider.name);
   private readonly server: Horizon.Server;
+  private readonly fallbackServer: Horizon.Server | null = null;
   private readonly networkPassphrase: string;
 
   /** In-memory cache for the dynamic p75 fee */
@@ -60,11 +66,22 @@ export class TransactionProvider {
       this.configService.getOrThrow<string>('stellar.horizonUrl');
     this.server = new Horizon.Server(horizonUrl);
 
+    const horizonFallbackUrl = this.configService.get<string>(
+      'stellar.horizonFallbackUrl',
+    );
+    if (horizonFallbackUrl) {
+      this.fallbackServer = new Horizon.Server(horizonFallbackUrl);
+    }
+
     const network = this.configService.getOrThrow<string>('stellar.network');
     this.networkPassphrase =
       network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
 
     this.logger.log('Initialized TransactionProvider');
+  }
+
+  private getActiveServer(): Horizon.Server {
+    return this.fallbackServer ?? this.server;
   }
 
   /**
@@ -88,7 +105,7 @@ export class TransactionProvider {
     }
 
     try {
-      const stats = await this.server.feeStats();
+      const stats = await this.getActiveServer().feeStats();
       // The Horizon SDK types don't expose p75, but the REST API returns it.
       const feeCharged = stats.fee_charged as unknown as FeeDistributionWithP75;
       const p75 = feeCharged?.p75;
@@ -129,7 +146,7 @@ export class TransactionProvider {
       const sourceKeypair = Keypair.fromSecret(params.ephemeralSecret);
 
       // Load source account
-      const sourceAccount = await this.server.loadAccount(
+      const sourceAccount = await this.getActiveServer().loadAccount(
         sourceKeypair.publicKey(),
       );
 
@@ -175,19 +192,20 @@ export class TransactionProvider {
       };
     } catch (error) {
       const typedError = error as HorizonErrorResponse;
+      const safeMessage = sanitizeErrorMessage(typedError.message);
       this.logger.error(
-        `Sweep transaction failed: ${typedError.message}`,
-        typedError.stack,
+        `Sweep transaction failed: ${safeMessage}`,
+        sanitizeStackTrace(typedError),
       );
 
       // Extract more details from Horizon error
       if (typedError.response?.data) {
-        const extras = typedError.response.data.extras;
-        this.logger.error(`Transaction extras: ${JSON.stringify(extras)}`);
+        const extras = redactSecrets(JSON.stringify(typedError.response.data.extras) ?? '');
+        this.logger.error(`Transaction extras: ${extras}`);
       }
 
       throw new InternalServerErrorException(
-        `Sweep transaction failed: ${typedError.message}`,
+        `Sweep transaction failed: ${safeMessage}`,
       );
     }
   }
@@ -208,7 +226,7 @@ export class TransactionProvider {
       const sourceKeypair = Keypair.fromSecret(params.ephemeralSecret);
 
       // Load source account
-      const sourceAccount = await this.server.loadAccount(
+      const sourceAccount = await this.getActiveServer().loadAccount(
         sourceKeypair.publicKey(),
       );
 
@@ -280,7 +298,7 @@ export class TransactionProvider {
     asset: string,
   ): Promise<string> {
     try {
-      const account = await this.server.loadAccount(publicKey);
+      const account = await this.getActiveServer().loadAccount(publicKey);
       const parsedAsset = this.parseAsset(asset);
       const balance = account.balances.find((b) => {
         if (parsedAsset.isNative()) {

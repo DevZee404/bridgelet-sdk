@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { SweepsService } from './sweeps.service.js';
 import { ValidationProvider } from './providers/validation.provider.js';
 import { ContractProvider } from './providers/contract.provider.js';
@@ -8,6 +9,8 @@ import { StellarService } from '../stellar/stellar.service.js';
 import { ConfigService } from '@nestjs/config';
 import { getToken } from '@willsoto/nestjs-prometheus';
 import { SweepMetricsProvider } from './providers/sweep-metrics.provider.js';
+import { Account } from '../accounts/entities/account.entity.js';
+import { Claim } from '../claims/entities/claim.entity.js';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -111,6 +114,14 @@ describe('SweepsService', () => {
         { provide: TransactionProvider, useValue: transactionProvider },
         { provide: StellarService, useValue: stellarService },
         { provide: ConfigService, useValue: configMock },
+        {
+          provide: getRepositoryToken(Account),
+          useValue: { findOne: jest.fn().mockResolvedValue(null) },
+        },
+        {
+          provide: getRepositoryToken(Claim),
+          useValue: { findOne: jest.fn().mockResolvedValue(null) },
+        },
         {
           provide: getToken('sweep_success_total'),
           useValue: { inc: jest.fn() },

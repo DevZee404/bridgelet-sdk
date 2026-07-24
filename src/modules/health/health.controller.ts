@@ -2,6 +2,7 @@ import { Controller, Get, HttpCode } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 
 /**
  * Maximum milliseconds to wait for a pool connection before reporting the
@@ -10,37 +11,55 @@ import { DataSource } from 'typeorm';
  * introducing an independent, stale timeout value.
  */
 const DB_HEALTH_TIMEOUT_MS = 3_000;
+const HORIZON_HEALTH_TIMEOUT_MS = 5_000;
 
 @ApiTags('health')
 @Controller('health')
 export class HealthController {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Get()
   @HttpCode(200)
-  @ApiOperation({ summary: 'Health check – includes database pool status' })
+  @ApiOperation({ summary: 'Health check – includes database and Horizon status' })
   @ApiResponse({ status: 200, description: 'Service is healthy' })
   @ApiResponse({ status: 503, description: 'Service is unhealthy' })
   async check() {
     const dbStatus = await this.checkDatabasePool();
+    const horizonStatus = await this.checkHorizon();
     return {
-      status: dbStatus.healthy ? 'ok' : 'degraded',
+      status: dbStatus.healthy && horizonStatus.healthy ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       services: {
         database: dbStatus,
-        stellar: 'ok',
+        horizon: horizonStatus,
         soroban: 'ok',
       },
     };
   }
 
-  /**
-   * Attempts to acquire a pool connection and run a trivial query within
-   * DB_HEALTH_TIMEOUT_MS. Returns a structured status object that captures:
-   *   - healthy:       whether the check succeeded
-   *   - poolExhausted: true when the acquire timeout fired (all connections busy)
-   *   - error:         human-readable reason when unhealthy
-   */
+  private async checkHorizon(): Promise<{
+    healthy: boolean;
+    url?: string;
+    error?: string;
+  }> {
+    const horizonUrl = this.configService.get<string>('stellar.horizonUrl');
+    if (!horizonUrl) return { healthy: false, error: 'No Horizon URL configured' };
+
+    try {
+      const resp = await fetch(`${horizonUrl}/ledgers?limit=1&order=desc`, {
+        signal: AbortSignal.timeout(HORIZON_HEALTH_TIMEOUT_MS),
+      });
+      if (resp.ok) return { healthy: true, url: horizonUrl };
+      return { healthy: false, url: horizonUrl, error: `HTTP ${resp.status}` };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { healthy: false, url: horizonUrl, error: message };
+    }
+  }
+
   private async checkDatabasePool(): Promise<{
     healthy: boolean;
     poolExhausted: boolean;

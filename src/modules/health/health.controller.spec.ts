@@ -1,18 +1,35 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getDataSourceToken } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { HealthController } from './health.controller.js';
 
 /** Shared factory: creates a NestJS test module with a mocked DataSource. */
 async function buildModule(
   dataSourceMock: Partial<DataSource>,
+  horizonHealthy = true,
 ): Promise<TestingModule> {
+  const mockConfigService = {
+    get: jest.fn().mockImplementation((key: string) => {
+      if (key === 'stellar.horizonUrl') return 'https://horizon-testnet.stellar.org';
+      return undefined;
+    }),
+    getOrThrow: jest.fn().mockImplementation((key: string) => {
+      if (key === 'stellar.horizonUrl') return 'https://horizon-testnet.stellar.org';
+      throw new Error(`Missing config: ${key}`);
+    }),
+  };
+
   return Test.createTestingModule({
     controllers: [HealthController],
     providers: [
       {
         provide: getDataSourceToken(),
         useValue: dataSourceMock,
+      },
+      {
+        provide: ConfigService,
+        useValue: mockConfigService,
       },
     ],
   }).compile();
@@ -26,10 +43,15 @@ describe('HealthController', () => {
     let controller: HealthController;
 
     beforeEach(async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true });
       const module = await buildModule({
         query: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
       });
       controller = module.get(HealthController);
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
     });
 
     it('returns status "ok"', async () => {
@@ -50,9 +72,9 @@ describe('HealthController', () => {
       expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
-    it('reports stellar and soroban as ok', async () => {
+    it('reports horizon and soroban as ok', async () => {
       const result = await controller.check();
-      expect(result.services.stellar).toBe('ok');
+      expect(result.services.horizon).toEqual({ healthy: true, url: 'https://horizon-testnet.stellar.org' });
       expect(result.services.soroban).toBe('ok');
     });
   });
@@ -75,9 +97,15 @@ describe('HealthController', () => {
         ),
       });
       controller = module.get(HealthController);
+
+      // Mock fetch to resolve immediately so the Horizon check doesn't interfere with fake timers
+      global.fetch = jest.fn().mockResolvedValue({ ok: true });
     });
 
-    afterEach(() => jest.useRealTimers());
+    afterEach(() => {
+      jest.useRealTimers();
+      jest.restoreAllMocks();
+    });
 
     it('returns status "degraded"', async () => {
       const promise = controller.check();
@@ -104,10 +132,15 @@ describe('HealthController', () => {
     let controller: HealthController;
 
     beforeEach(async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: true });
       const module = await buildModule({
         query: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
       });
       controller = module.get(HealthController);
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
     });
 
     it('returns status "degraded"', async () => {
