@@ -7,12 +7,23 @@ import { Histogram } from 'prom-client';
 
 export const EXPIRY_BUFFER_LEDGERS = 10;
 
+/**
+ * How long (in milliseconds) the cached ledger sequence is considered fresh.
+ * Stellar closes a new ledger approximately every 5 seconds, so we cache for
+ * the same duration to avoid redundant Horizon calls without risking a stale
+ * sequence number that is more than one ledger behind.
+ */
+export const LEDGER_CACHE_TTL_MS = 5_000;
+
 @Injectable()
 export class StellarService {
   private readonly logger = new Logger(StellarService.name);
   private server: StellarSdk.Horizon.Server;
   private sorobanServer: SorobanRpc.Server;
   private network: string;
+
+  /** Cached ledger sequence and the timestamp it was fetched at (ms). */
+  private ledgerCache: { sequence: number; fetchedAt: number } | null = null;
 
   constructor(
     private configService: ConfigService,
@@ -38,8 +49,25 @@ export class StellarService {
    *
    * Stellar closes a ledger approximately every 5 seconds.
    * Conversion: expiry_ledger = current_ledger + Math.ceil(expiresInSeconds / 5)
+   *
+   * The result is cached for {@link LEDGER_CACHE_TTL_MS} (5 s) to reduce
+   * unnecessary Horizon round-trips when multiple accounts are created in quick
+   * succession.  Callers that need a guaranteed fresh value can call
+   * {@link invalidateLedgerCache} before invoking this method.
    */
   async getCurrentLedger(): Promise<number> {
+    const now = Date.now();
+
+    if (
+      this.ledgerCache !== null &&
+      now - this.ledgerCache.fetchedAt < LEDGER_CACHE_TTL_MS
+    ) {
+      this.logger.debug(
+        `Current ledger sequence (cached): ${this.ledgerCache.sequence}`,
+      );
+      return this.ledgerCache.sequence;
+    }
+
     const ledgerPage = await this.server
       .ledgers()
       .order('desc')
@@ -47,8 +75,20 @@ export class StellarService {
       .call();
 
     const sequence = ledgerPage.records[0].sequence;
+    this.ledgerCache = { sequence, fetchedAt: now };
     this.logger.debug(`Current ledger sequence: ${sequence}`);
     return sequence;
+  }
+
+  /**
+   * Clears the cached ledger sequence, forcing the next call to
+   * {@link getCurrentLedger} to fetch a fresh value from Horizon.
+   *
+   * Useful in tests and in contexts where a stale ledger could cause problems
+   * (e.g. when the process has been sleeping for more than 5 s).
+   */
+  invalidateLedgerCache(): void {
+    this.ledgerCache = null;
   }
 
   /**
