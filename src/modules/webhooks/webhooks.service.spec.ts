@@ -5,26 +5,11 @@ import { Logger } from '@nestjs/common';
 import { WebhooksService } from './webhooks.service.js';
 import { Webhook } from './entities/webhook.entity.js';
 import { WebhookDelivery } from './entities/webhook-delivery.entity.js';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const WEBHOOK_SECRET = 'test-secret-key';
-const WEBHOOK_URL = 'https://example.com/hook';
-
-const makeWebhook = (overrides: Partial<Webhook> = {}): Webhook => ({
-  id: 'webhook-uuid-1',
-  url: WEBHOOK_URL,
-  secret: WEBHOOK_SECRET,
-  events: ['sweep.completed', 'account.created'],
-  isActive: true,
-  description: null,
-  lastTriggeredAt: null,
-  createdAt: new Date('2026-01-01T00:00:00.000Z'),
-  updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-  ...overrides,
-});
+import {
+  makeWebhook,
+  DEFAULT_WEBHOOK_URL as WEBHOOK_URL,
+  DEFAULT_WEBHOOK_SECRET as WEBHOOK_SECRET,
+} from '../../testing/factories/webhook.factory.js';
 
 function expectedSignature(body: string, secret: string | null): string {
   return crypto

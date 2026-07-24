@@ -32,10 +32,8 @@ const REAL_SEED_HEX = crypto
   .update('bridgelet-test-seed-issue-49')
   .digest('hex'); // 64 hex chars === 32 bytes
 
-const DEST_ADDRESS =
-  'GDWTSHU3BQ4XGRRTGBOLW7KWOPPFSMZTF5UK3TKSO7MDDYGYGRQNCHFO';
-const CONTRACT_ID =
-  'CASJFOEQG3WN42CR37EKINFO77PP7UO2DT5XCNHITYT7WUHL7X3RYQFF';
+const DEST_ADDRESS = 'GDWTSHU3BQ4XGRRTGBOLW7KWOPPFSMZTF5UK3TKSO7MDDYGYGRQNCHFO';
+const CONTRACT_ID = 'CASJFOEQG3WN42CR37EKINFO77PP7UO2DT5XCNHITYT7WUHL7X3RYQFF';
 
 /** A placeholder seed that is NOT 32 bytes — simulates a mis-configured deployment */
 const INVALID_SEED_HEX = 'aabb'; // 2 bytes
@@ -86,10 +84,9 @@ const BASE_CONFIG: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 describe('ContractProvider.generateAuthSignature — stub (dev/test)', () => {
-  let provider: ContractProvider;
   const savedEnv = process.env.NODE_ENV;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
   });
 
@@ -379,7 +376,11 @@ describe('ContractProvider.generateAuthSignature — real Ed25519 signature', ()
       Buffer.from('302a300506032b6570032100', 'hex'),
       publicKeyBytes,
     ]);
-    const publicKey = crypto.createPublicKey({ key: pkDer, format: 'der', type: 'spki' });
+    const publicKey = crypto.createPublicKey({
+      key: pkDer,
+      format: 'der',
+      type: 'spki',
+    });
     return crypto.verify(null, message, publicKey, signature);
   }
 
@@ -514,7 +515,10 @@ describe('ContractProvider.generateAuthSignature — real Ed25519 signature', ()
     const { provider: p } = await buildProvider(BASE_CONFIG);
 
     // u64 max value
-    const sig = p.generateAuthSignature({ ...baseParams, nonce: 18446744073709551615n });
+    const sig = p.generateAuthSignature({
+      ...baseParams,
+      nonce: 18446744073709551615n,
+    });
     expect(sig.length).toBe(64);
   });
 

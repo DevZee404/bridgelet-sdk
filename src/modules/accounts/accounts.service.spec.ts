@@ -12,9 +12,11 @@ import { AccountStatus } from './enums/account-status.enum.js';
 import { CreateAccountDto } from './dto/create-account.dto.js';
 import { AccountLatencyMetricsProvider } from './providers/account-latency-metrics.provider.js';
 import { KmsKeyProvider } from '../../common/crypto/kms-key.provider.js';
-
-const VALID_KEY = 'G' + 'A'.repeat(55);
-const VALID_KEY2 = 'G' + 'B'.repeat(55);
+import {
+  makeAccount,
+  DEFAULT_PUBLIC_KEY as VALID_KEY,
+  DEFAULT_FUNDING_SOURCE as VALID_KEY2,
+} from '../../testing/factories/account.factory.js';
 
 const mockRepo = {
   create: jest.fn(),
@@ -52,27 +54,6 @@ const mockConfigService = {
 const mockWebhooksService = {
   triggerEvent: jest.fn().mockResolvedValue(undefined),
 };
-
-function makeAccount(overrides: Partial<Account> = {}): Account {
-  return {
-    id: 'uuid-1',
-    publicKey: VALID_KEY,
-    secretKeyEncrypted: 'enc',
-    fundingSource: VALID_KEY2,
-    amount: '100',
-    asset: 'native',
-    status: AccountStatus.PENDING_PAYMENT,
-    claimTokenHash: 'hash',
-    destinationAddress: null,
-    expiresAt: new Date('2099-01-01'),
-    createdAt: new Date('2026-01-01'),
-    updatedAt: new Date('2026-01-01'),
-    claimedAt: null,
-    expiredAt: null,
-    metadata: null,
-    ...overrides,
-  } as Account;
-}
 
 describe('AccountsService', () => {
   let service: AccountsService;
@@ -201,7 +182,7 @@ describe('AccountsService', () => {
 
   describe('findOne', () => {
     it('returns an AccountResponseDto for an existing account', async () => {
-      mockRepo.findOne.mockResolvedValue(makeAccount());
+      mockRepo.findOne.mockResolvedValue(makeAccount({ id: 'uuid-1' }));
 
       const result = await service.findOne('uuid-1');
 
@@ -218,7 +199,9 @@ describe('AccountsService', () => {
     });
 
     it('returns null claimUrl when claimTokenHash is absent', async () => {
-      mockRepo.findOne.mockResolvedValue(makeAccount({ claimTokenHash: null }));
+      mockRepo.findOne.mockResolvedValue(
+        makeAccount({ id: 'uuid-1', claimTokenHash: null }),
+      );
 
       const result = await service.findOne('uuid-1');
 
@@ -227,7 +210,7 @@ describe('AccountsService', () => {
 
     it('returns a masked claimUrl when claimTokenHash is present', async () => {
       mockRepo.findOne.mockResolvedValue(
-        makeAccount({ claimTokenHash: 'abc' }),
+        makeAccount({ id: 'uuid-1', claimTokenHash: 'abc' }),
       );
 
       const result = await service.findOne('uuid-1');
