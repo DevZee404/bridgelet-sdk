@@ -13,6 +13,7 @@ import {
   BASE_FEE,
   Networks,
 } from '@stellar/stellar-sdk';
+import { Transaction } from '@stellar/stellar-sdk';
 import type { ExecuteTransactionParams } from '../interfaces/execute-transaction-params.interface.js';
 import type { TransactionResult } from '../interfaces/transaction-result.interface.js';
 import type { MergeAccountParams } from '../interfaces/merge-account-params.interface.js';
@@ -270,6 +271,73 @@ export class TransactionProvider {
 
     const [code, issuer] = parts;
     return new Asset(code, issuer);
+  }
+
+  /**
+   * Submit a transaction as a fee-bump to rescue a stuck (low-fee) sweep.
+   *
+   * Wraps the existing transaction in a fee-bump envelope that pays a higher
+   * fee via a sponsor account.  This is useful when a sweep transaction was
+   * submitted with BASE_FEE and got stuck because the network fee rose.
+   *
+   * @param innerTxHash       The hash of the original stuck transaction.
+   * @param innerEnvelopeBase64  The base64-encoded XDR of the original transaction envelope.
+   * @param feePayerSecret    Secret key of the account paying the bumped fee.
+   * @param bumpFee           The fee to pay for the bump (must be > original fee).
+   */
+  public async submitFeeBumpTransaction(
+    innerTxHash: string,
+    innerEnvelopeBase64: string,
+    feePayerSecret: string,
+    bumpFee: string,
+  ): Promise<TransactionResult> {
+    this.logger.log(
+      `Submitting fee-bump for stuck tx ${innerTxHash} with fee ${bumpFee}`,
+    );
+
+    try {
+      const feePayerKeypair = Keypair.fromSecret(feePayerSecret);
+
+      // Deserialize the inner transaction envelope
+      const innerTx = new Transaction(
+        innerEnvelopeBase64,
+        this.networkPassphrase,
+      );
+
+      // Build fee-bump transaction
+      const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(
+        feePayerKeypair.publicKey(),
+        bumpFee.toString(),
+        innerTx,
+        this.networkPassphrase,
+      );
+
+      feeBumpTx.sign(feePayerKeypair);
+
+      // Submit fee-bump
+      const result = await this.server.submitTransaction(feeBumpTx);
+
+      this.logger.log(
+        `Fee-bump successful for tx ${innerTxHash}: new hash=${result.hash}`,
+      );
+
+      return {
+        hash: result.hash,
+        ledger: result.ledger,
+        successful: result.successful,
+        timestamp: new Date(),
+      };
+    } catch (error) {
+      const typedError = error as HorizonErrorResponse;
+      this.logger.error(
+        `Fee-bump failed for tx ${innerTxHash}: ${typedError.message}`,
+        typedError.stack,
+      );
+
+      throw new InternalServerErrorException(
+        `Fee-bump transaction failed: ${typedError.message}`,
+      );
+    }
   }
 
   /**
