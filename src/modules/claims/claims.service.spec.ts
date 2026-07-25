@@ -124,7 +124,8 @@ describe('ClaimsService', () => {
     it('should successfully verify valid token with eligible account', async () => {
       mockAccountRepository.findOne.mockResolvedValue(mockAccount);
 
-      const result = await tokenVerificationProvider.verifyClaimToken(validToken);
+      const result =
+        await tokenVerificationProvider.verifyClaimToken(validToken);
 
       expect(result).toEqual({
         valid: true,
@@ -139,7 +140,8 @@ describe('ClaimsService', () => {
     it('should return correct verification response with amount and expiry', async () => {
       mockAccountRepository.findOne.mockResolvedValue(mockAccount);
 
-      const result = await tokenVerificationProvider.verifyClaimToken(validToken);
+      const result =
+        await tokenVerificationProvider.verifyClaimToken(validToken);
 
       expect(result.valid).toBe(true);
       expect(result.amount).toBe('100.0000000');
@@ -302,7 +304,8 @@ describe('ClaimsService', () => {
     const mockClaimDetails = {
       id: claimId,
       accountId: 'account-id',
-      destinationAddress: 'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      destinationAddress:
+        'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
       amountSwept: '100.0000000',
       asset: 'native',
       sweepTxHash: 'tx-hash',
