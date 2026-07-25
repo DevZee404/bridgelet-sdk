@@ -26,7 +26,7 @@ export class RedeemClaimDto {
   @IsNotEmpty({
     message: 'destinationAddress is required',
   })
-  @Matches(/^G[A-Z0-9]{55}$/, {
+  @Matches(/^G[A-Z2-7]{55}$/, {
     message:
       'destinationAddress must be a valid Stellar address (starts with G and is 56 characters long)',
   })

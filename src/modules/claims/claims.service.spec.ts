@@ -6,6 +6,7 @@ import { ClaimRedemptionProvider } from './providers/claim-redemption.provider.j
 import { ClaimDetailsDto } from './dto/claim-details.dto.js';
 import { ClaimVerificationResponseDto } from './dto/claim-verification-response.dto.js';
 import { ClaimRedemptionResponseDto } from './dto/claim-redemption-response.dto.js';
+import { getToken } from '@willsoto/nestjs-prometheus';
 
 /**
  * Integration Tests for ClaimsService
@@ -33,7 +34,7 @@ describe('ClaimsService Integration Tests', () => {
   const mockClaimId = 'claim-id-123';
   const mockToken = 'valid.jwt.token';
   const mockDestinationAddress =
-    'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+    'GBULQKZ7SA56UKRI6LX2IB6XH3GJW2L34BMTOWMQFJBAQNPSHJJNOTGN';
 
   const mockClaimDetails: ClaimDetailsDto = {
     id: mockClaimId,
@@ -90,6 +91,10 @@ describe('ClaimsService Integration Tests', () => {
         {
           provide: ClaimRedemptionProvider,
           useValue: claimRedemptionProvider,
+        },
+        {
+          provide: getToken('claim_redemption_total'),
+          useValue: { inc: jest.fn() },
         },
       ],
     }).compile();

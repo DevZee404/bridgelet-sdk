@@ -238,5 +238,125 @@ describe('ValidationProvider', () => {
       const result = await provider.getSweepStatus('acc-123');
       expect(result.reason).toBe('Already swept');
     });
+
+    it('returns "Account expired" for EXPIRED status', async () => {
+      jest
+        .spyOn(repo, 'findOne')
+        .mockResolvedValue(mockAccount({ status: AccountStatus.EXPIRED }));
+      const result = await provider.getSweepStatus('acc-123');
+      expect(result.reason).toBe('Account expired');
+    });
+
+    it('returns "Payment not received" for PENDING_PAYMENT status', async () => {
+      jest
+        .spyOn(repo, 'findOne')
+        .mockResolvedValue(
+          mockAccount({ status: AccountStatus.PENDING_PAYMENT }),
+        );
+      const result = await provider.getSweepStatus('acc-123');
+      expect(result.reason).toBe('Payment not received');
+    });
+
+    it('returns reason for account with no publicKey', async () => {
+      jest
+        .spyOn(repo, 'findOne')
+        .mockResolvedValue(mockAccount({ publicKey: '' }));
+      const result = await provider.getSweepStatus('acc-123');
+      expect(result.canSweep).toBe(false);
+    });
+  });
+
+  describe('validateSweepParameters — additional branches', () => {
+    const base = {
+      accountId: 'acc-123',
+      ephemeralPublicKey: 'GAB...',
+      ephemeralSecret: 'SABC123',
+      destinationAddress: 'GD5J6HLF5666X4AZLTFTXGKWDBSUXSWXP6P5F20O1337',
+      amount: '100',
+      asset: 'native',
+    };
+
+    it('throws when ephemeralPublicKey does not match account', async () => {
+      jest
+        .spyOn(repo, 'findOne')
+        .mockResolvedValue(mockAccount({ publicKey: 'GDIFFERENT...' }));
+      await expect(
+        provider.validateSweepParameters({
+          ...base,
+          ephemeralPublicKey: 'GNOT_MATCHING',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws when amount is zero', async () => {
+      jest
+        .spyOn(repo, 'findOne')
+        .mockResolvedValue(mockAccount({ publicKey: base.ephemeralPublicKey }));
+      await expect(
+        provider.validateSweepParameters({ ...base, amount: '0' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws when amount is NaN', async () => {
+      jest
+        .spyOn(repo, 'findOne')
+        .mockResolvedValue(mockAccount({ publicKey: base.ephemeralPublicKey }));
+      await expect(
+        provider.validateSweepParameters({ ...base, amount: 'notanumber' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('throws for invalid asset format (not native and not CODE:ISSUER)', async () => {
+      jest.spyOn(repo, 'findOne').mockResolvedValue(
+        mockAccount({
+          publicKey: base.ephemeralPublicKey,
+          amount: '100',
+          asset: 'BADFORMAT',
+        }),
+      );
+      await expect(
+        provider.validateSweepParameters({ ...base, asset: 'BADFORMAT' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('isValidAssetFormat — private method via validateSweepParameters', () => {
+    const base = {
+      accountId: 'acc-123',
+      ephemeralPublicKey: 'GAB...',
+      ephemeralSecret: 'SABC123',
+      destinationAddress: 'GD5J6HLF5666X4AZLTFTXGKWDBSUXSWXP6P5F20O1337',
+      amount: '100',
+    };
+
+    it('rejects asset with no colon (single-part)', async () => {
+      jest.spyOn(repo, 'findOne').mockResolvedValue(
+        mockAccount({
+          publicKey: base.ephemeralPublicKey,
+          amount: '100',
+          asset: 'USDC',
+        }),
+      );
+      await expect(
+        provider.validateSweepParameters({ ...base, asset: 'USDC' }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects asset code that is too long (>12 chars)', async () => {
+      jest.spyOn(repo, 'findOne').mockResolvedValue(
+        mockAccount({
+          publicKey: base.ephemeralPublicKey,
+          amount: '100',
+          asset: 'TOOLONGCODE1X:GABC',
+        }),
+      );
+      jest.spyOn(StrKey, 'isValidEd25519PublicKey').mockReturnValue(true);
+      await expect(
+        provider.validateSweepParameters({
+          ...base,
+          asset: 'TOOLONGCODE1X:GABC',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 });

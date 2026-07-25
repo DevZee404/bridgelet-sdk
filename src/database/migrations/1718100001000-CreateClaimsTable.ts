@@ -25,6 +25,10 @@ export class CreateClaimsTable1718100001000 implements MigrationInterface {
     await queryRunner.query(
       `CREATE INDEX "IDX_claims_accountId" ON "claims" ("accountId")`,
     );
+    await queryRunner.query(`
+      COMMENT ON COLUMN "claims"."sweepTxHash" IS
+      'Stellar transaction hash of the sweep. Always a 64-character hex string — never a placeholder value. Enforced by TransactionHashValidator before record creation.'
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

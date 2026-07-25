@@ -7,9 +7,9 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account } from '../../accounts/entities/account.entity.js';
-import { StrKey } from '@stellar/stellar-sdk';
 import type { SweepExecutionRequest } from '../interfaces/execute-sweep.interface.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
+import { StellarAddressValidator } from '../../../common/validators/stellar-address.validator.js';
 
 @Injectable()
 export class ValidationProvider {
@@ -30,8 +30,10 @@ export class ValidationProvider {
       `Validating sweep parameters for account: ${sweepExecutionRequest.accountId}`,
     );
 
-    // Validate destination address format
-    this.validateStellarAddress(sweepExecutionRequest.destinationAddress);
+    // Validate destination address
+    StellarAddressValidator.assertValid(
+      sweepExecutionRequest.destinationAddress,
+    );
 
     // Validate account exists and is in correct state
     const account = await this.accountRepository.findOne({
@@ -112,7 +114,7 @@ export class ValidationProvider {
       if (account.status !== AccountStatus.PENDING_CLAIM) return false;
       if (new Date() > account.expiresAt) return false;
 
-      this.validateStellarAddress(destinationAddress);
+      StellarAddressValidator.assertValid(destinationAddress);
       return true;
     } catch {
       return false;
@@ -160,28 +162,6 @@ export class ValidationProvider {
   }
 
   /**
-   * Validate Stellar address format
-   */
-  private validateStellarAddress(address: string): void {
-    try {
-      // Use Stellar SDK's built-in validation
-      if (!StrKey.isValidEd25519PublicKey(address)) {
-        throw new BadRequestException(`Invalid Stellar address: ${address}`);
-      }
-    } catch {
-      throw new BadRequestException(`Invalid Stellar address: ${address}`);
-    }
-  }
-
-  /**
-   * Validate Stellar address format (boolean return)
-   */
-  private isValidStellarAddress(address: string): boolean {
-    // Stellar addresses start with G and are 56 characters long
-    return /^G[A-Z2-7]{55}$/.test(address);
-  }
-
-  /**
    * Validate asset format (native, XLM, or CODE:ISSUER)
    */
   private isValidAssetFormat(asset: string): boolean {
@@ -202,6 +182,6 @@ export class ValidationProvider {
     }
 
     // Issuer must be valid Stellar address
-    return this.isValidStellarAddress(issuer);
+    return StellarAddressValidator.isValid(issuer);
   }
 }

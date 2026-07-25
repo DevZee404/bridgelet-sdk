@@ -1,5 +1,12 @@
-import { Controller, Get, Param, Post, Body } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags, ApiParam } from '@nestjs/swagger';
+import { Controller, Get, Param, Post, Body, UseGuards } from '@nestjs/common';
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+  ApiParam,
+  ApiBody,
+} from '@nestjs/swagger';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { ClaimsService } from './claims.service.js';
 import { ClaimDetailsDto } from './dto/claim-details.dto.js';
 import { VerifyClaimDto } from './dto/verify-claim.dto.js';
@@ -9,6 +16,7 @@ import { ClaimVerificationResponseDto } from './dto/claim-verification-response.
 
 @ApiTags('claims')
 @Controller('claims')
+@UseGuards(ThrottlerGuard)
 export class ClaimsController {
   constructor(private readonly claimsService: ClaimsService) {}
 
@@ -30,6 +38,7 @@ export class ClaimsController {
   }
 
   @Post('verify')
+  @Throttle({ default: { limit: 20, ttl: 60000 } }) // 20 requests/min per API key
   @ApiOperation({ summary: 'Verify claim token validity' })
   @ApiResponse({
     status: 200,
@@ -42,6 +51,7 @@ export class ClaimsController {
     status: 400,
     description: 'Account has not received payment or invalid request',
   })
+  @ApiBody({ type: VerifyClaimDto })
   public async verifyClaim(
     @Body() verifyClaimDto: VerifyClaimDto,
   ): Promise<ClaimVerificationResponseDto> {
@@ -49,6 +59,7 @@ export class ClaimsController {
   }
 
   @Post('redeem')
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 requests/min per IP
   @ApiOperation({
     summary: 'Redeem claim and sweep funds to destination wallet',
   })
@@ -60,6 +71,7 @@ export class ClaimsController {
   @ApiResponse({ status: 401, description: 'Invalid or expired token' })
   @ApiResponse({ status: 400, description: 'Invalid destination address' })
   @ApiResponse({ status: 409, description: 'Claim already redeemed' })
+  @ApiBody({ type: RedeemClaimDto })
   public async redeem(
     @Body() redeemClaimDto: RedeemClaimDto,
   ): Promise<ClaimRedemptionResponseDto> {
