@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnApplicationBootstrap } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AccountsController } from './accounts.controller.js';
 import { AccountsService } from './accounts.service.js';
@@ -6,6 +6,16 @@ import { Account } from './entities/account.entity.js';
 import { StellarModule } from '../stellar/stellar.module.js';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { PaymentMonitorProvider } from '../stellar/providers/payment-monitor-provider.js';
+import { WebhooksModule } from '../webhooks/webhooks.module.js';
+import { IntegratorsModule } from '../integrators/integrators.module.js';
+import { makeCounterProvider } from '@willsoto/nestjs-prometheus';
+import { AccountLatencyMetricsProvider } from './providers/account-latency-metrics.provider.js';
+
+const accountCreationCounter = makeCounterProvider({
+  name: 'account_creation_total',
+  help: 'Total number of accounts created',
+});
 
 @Module({
   imports: [
@@ -21,9 +31,29 @@ import { JwtModule } from '@nestjs/jwt';
       inject: [ConfigService],
     }),
     StellarModule,
+    WebhooksModule,
+    IntegratorsModule,
   ],
   controllers: [AccountsController],
-  providers: [AccountsService],
-  exports: [AccountsService],
+  providers: [
+    AccountsService,
+    PaymentMonitorProvider,
+    AccountLatencyMetricsProvider,
+    accountCreationCounter,
+  ],
+  exports: [AccountsService, JwtModule],
 })
-export class AccountsModule {}
+
+// Note: seeing as PaymentMonitorPRovider is a sub provider in stellar service, this should be adjusted to fit that. Probably call stellatService.PaymentMonitorProvider in the constructor after wiring it up
+export class AccountsModule implements OnApplicationBootstrap {
+  constructor(private readonly paymentMonitor: PaymentMonitorProvider) {}
+
+  /**
+   * After all modules are initialized, restore payment monitoring for any
+   * accounts that were in PENDING_PAYMENT status before the last restart.
+   * This prevents orphaned accounts after a service restart.
+   */
+  async onApplicationBootstrap(): Promise<void> {
+    await this.paymentMonitor.restoreActiveStreams();
+  }
+}

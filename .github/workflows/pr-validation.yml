@@ -1,0 +1,151 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, edited, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  validate-pr-conventions:
+    name: Validate Branch And PR Title
+    runs-on: ubuntu-latest
+    env:
+      # Keep checks in warning mode until this date, then enforce with failures.
+      ENFORCEMENT_START_DATE: '2026-02-27'
+      BRANCH_REGEX: '^(fix|feature|feat|test|chore|docs|refactor|ref|hotfix|release|ci|build|revert)/[a-z0-9-]+$'
+      TITLE_REGEX: '^(fix|feature|feat|test|chore|docs|refactor|ref|hotfix|release|ci|build|revert): .+$'
+
+    steps:
+      - name: Validate branch and PR title
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          BRANCH_NAME="${{ github.head_ref }}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          TODAY="$(date -u +%F)"
+
+          ENFORCE_BLOCKING=false
+          if [[ "$TODAY" > "${ENFORCEMENT_START_DATE}" || "$TODAY" == "${ENFORCEMENT_START_DATE}" ]]; then
+            ENFORCE_BLOCKING=true
+          fi
+
+          BRANCH_VALID=true
+          TITLE_VALID=true
+
+          if [[ "$BRANCH_NAME" != "main" && "$BRANCH_NAME" != "develop" ]]; then
+            if [[ ! "${BRANCH_NAME,,}" =~ $BRANCH_REGEX ]]; then
+              BRANCH_VALID=false
+            fi
+          fi
+
+          if [[ ! "${PR_TITLE,,}" =~ $TITLE_REGEX ]]; then
+            TITLE_VALID=false
+          fi
+
+          if [[ "$BRANCH_VALID" == true && "$TITLE_VALID" == true ]]; then
+            echo "PR naming validation passed."
+            exit 0
+          fi
+
+          echo "Branch name: '$BRANCH_NAME'"
+          echo "PR title: '$PR_TITLE'"
+          echo ""
+          echo "Expected branch format:"
+          echo "  (fix|feature|feat|test|chore|docs|refactor|...)/brief-description"
+          echo "Regex: $BRANCH_REGEX"
+          echo "Examples:"
+          echo "  - fix/jwt-error-handling"
+          echo "  - feature/webhook-service"
+          echo "Exemptions: main and develop"
+          echo ""
+          echo "Expected PR title format:"
+          echo "  (fix|feature|feat|test|chore|docs|refactor|...): Brief description"
+          echo "Regex: $TITLE_REGEX"
+          echo "Examples:"
+          echo "  - fix: Handle JWT errors in TokenVerificationProvider"
+          echo "  - test: Add unit tests for ClaimLookupProvider"
+          echo ""
+
+          if [[ "$ENFORCE_BLOCKING" == true ]]; then
+            if [[ "$BRANCH_VALID" == false ]]; then
+              echo "::error::Invalid branch name '$BRANCH_NAME'."
+            fi
+            if [[ "$TITLE_VALID" == false ]]; then
+              echo "::error::Invalid PR title '$PR_TITLE'."
+            fi
+            echo "::error::PR validation failed. Update branch name and/or PR title to match contribution conventions."
+            exit 1
+          fi
+
+          if [[ "$BRANCH_VALID" == false ]]; then
+            echo "::warning::Invalid branch name '$BRANCH_NAME'. This is warning-only until ${ENFORCEMENT_START_DATE}."
+          fi
+          if [[ "$TITLE_VALID" == false ]]; then
+            echo "::warning::Invalid PR title '$PR_TITLE'. This is warning-only until ${ENFORCEMENT_START_DATE}."
+          fi
+          echo "::warning::PR naming conventions will become blocking on ${ENFORCEMENT_START_DATE}."
+          exit 0
+
+      - name: Regex self-checks (sample valid/invalid values)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          valid_branches=(
+            "fix/jwt-error-handling"
+            "test/claim-lookup-provider-tests"
+            "feature/webhook-service"
+            "main"
+            "develop"
+          )
+          invalid_branches=(
+            "my-branch"
+            "fix-stuff"
+            "123/starts-with-number"
+          )
+
+          valid_titles=(
+            "fix: Handle JWT errors in TokenVerificationProvider"
+            "test: Add unit tests for ClaimLookupProvider"
+            "refactor: Clean up auth middleware"
+            "feature: Implement WebhooksService"
+          )
+          invalid_titles=(
+            "fixed jwt errors"
+            "updates"
+            "Handle JWT errors"
+          )
+
+          for branch in "${valid_branches[@]}"; do
+            if [[ "$branch" != "main" && "$branch" != "develop" ]] && [[ ! "$branch" =~ $BRANCH_REGEX ]]; then
+              echo "Expected valid branch failed regex: $branch"
+              exit 1
+            fi
+          done
+
+          for branch in "${invalid_branches[@]}"; do
+            if [[ "$branch" =~ $BRANCH_REGEX ]]; then
+              echo "Expected invalid branch matched regex: $branch"
+              exit 1
+            fi
+          done
+
+          for title in "${valid_titles[@]}"; do
+            if [[ ! "$title" =~ $TITLE_REGEX ]]; then
+              echo "Expected valid title failed regex: $title"
+              exit 1
+            fi
+          done
+
+          for title in "${invalid_titles[@]}"; do
+            if [[ "$title" =~ $TITLE_REGEX ]]; then
+              echo "Expected invalid title matched regex: $title"
+              exit 1
+            fi
+          done
+
+          echo "Regex sample checks passed."

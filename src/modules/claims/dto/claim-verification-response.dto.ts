@@ -21,7 +21,8 @@ export class ClaimVerificationResponseDto {
 
   @ApiProperty({
     example: 'native',
-    description: 'The asset identifier (e.g., "native" or "USDC:GBUQWP3BOUZX34ULNQG23RQ6F4BFSRXVZ6GM2FYCVJW5M2D4D811E4B2")',
+    description:
+      'The asset identifier (e.g., "native" or "USDC:GBUQWP3BOUZX34ULNQG23RQ6F4BFSRXVZ6GM2FYCVJW5M2D4D811E4B2")',
   })
   asset: string;
 

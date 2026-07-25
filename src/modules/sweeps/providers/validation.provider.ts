@@ -6,12 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  Account,
-  AccountStatus,
-} from '../../accounts/entities/account.entity.js';
-import { StrKey } from '@stellar/stellar-sdk';
-import type { ExecuteSweepDto } from '../dto/execute-sweep.dto.js';
+import { Account } from '../../accounts/entities/account.entity.js';
+import type { SweepExecutionRequest } from '../interfaces/execute-sweep.interface.js';
+import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
+import { StellarAddressValidator } from '../../../common/validators/stellar-address.validator.js';
 
 @Injectable()
 export class ValidationProvider {
@@ -25,25 +23,31 @@ export class ValidationProvider {
   /**
    * Validate all sweep parameters before execution
    */
-  public async validateSweepParameters(dto: ExecuteSweepDto): Promise<void> {
+  public async validateSweepParameters(
+    sweepExecutionRequest: SweepExecutionRequest,
+  ): Promise<void> {
     this.logger.log(
-      `Validating sweep parameters for account: ${dto.accountId}`,
+      `Validating sweep parameters for account: ${sweepExecutionRequest.accountId}`,
     );
 
-    // Validate destination address format
-    this.validateStellarAddress(dto.destinationAddress);
+    // Validate destination address
+    StellarAddressValidator.assertValid(
+      sweepExecutionRequest.destinationAddress,
+    );
 
     // Validate account exists and is in correct state
     const account = await this.accountRepository.findOne({
-      where: { id: dto.accountId },
+      where: { id: sweepExecutionRequest.accountId },
     });
 
     if (!account) {
-      throw new NotFoundException(`Account ${dto.accountId} not found`);
+      throw new NotFoundException(
+        `Account ${sweepExecutionRequest.accountId} not found`,
+      );
     }
 
     // Validate ephemeral public key matches
-    if (account.publicKey !== dto.ephemeralPublicKey) {
+    if (account.publicKey !== sweepExecutionRequest.ephemeralPublicKey) {
       throw new BadRequestException('Ephemeral public key mismatch');
     }
 
@@ -65,31 +69,33 @@ export class ValidationProvider {
     }
 
     // Validate amount is positive
-    const amount = parseFloat(dto.amount);
+    const amount = parseFloat(sweepExecutionRequest.amount);
     if (isNaN(amount) || amount <= 0) {
       throw new BadRequestException('Amount must be a positive number');
     }
 
     // Validate amount matches account balance
-    if (dto.amount !== account.amount) {
+    if (sweepExecutionRequest.amount !== account.amount) {
       throw new BadRequestException(
-        `Amount mismatch: expected ${account.amount}, got ${dto.amount}`,
+        `Amount mismatch: expected ${account.amount}, got ${sweepExecutionRequest.amount}`,
       );
     }
 
     // Validate asset format
-    if (!this.isValidAssetFormat(dto.asset)) {
+    if (!this.isValidAssetFormat(sweepExecutionRequest.asset)) {
       throw new BadRequestException('Invalid asset format');
     }
 
     // Validate asset matches
-    if (dto.asset !== account.asset) {
+    if (sweepExecutionRequest.asset !== account.asset) {
       throw new BadRequestException(
-        `Asset mismatch: expected ${account.asset}, got ${dto.asset}`,
+        `Asset mismatch: expected ${account.asset}, got ${sweepExecutionRequest.asset}`,
       );
     }
 
-    this.logger.log(`Validation passed for account: ${dto.accountId}`);
+    this.logger.log(
+      `Validation passed for account: ${sweepExecutionRequest.accountId}`,
+    );
   }
 
   /**
@@ -108,7 +114,7 @@ export class ValidationProvider {
       if (account.status !== AccountStatus.PENDING_CLAIM) return false;
       if (new Date() > account.expiresAt) return false;
 
-      this.validateStellarAddress(destinationAddress);
+      StellarAddressValidator.assertValid(destinationAddress);
       return true;
     } catch {
       return false;
@@ -130,7 +136,10 @@ export class ValidationProvider {
     }
 
     if (!account.publicKey) {
-      return { canSweep: false, reason: 'No public key associated with account' };
+      return {
+        canSweep: false,
+        reason: 'No public key associated with account',
+      };
     }
 
     if (account.status === AccountStatus.CLAIMED) {
@@ -150,28 +159,6 @@ export class ValidationProvider {
     }
 
     return { canSweep: true };
-  }
-
-  /**
-   * Validate Stellar address format
-   */
-  private validateStellarAddress(address: string): void {
-    try {
-      // Use Stellar SDK's built-in validation
-      if (!StrKey.isValidEd25519PublicKey(address)) {
-        throw new BadRequestException(`Invalid Stellar address: ${address}`);
-      }
-    } catch (error) {
-      throw new BadRequestException(`Invalid Stellar address: ${address}`);
-    }
-  }
-
-  /**
-   * Validate Stellar address format (boolean return)
-   */
-  private isValidStellarAddress(address: string): boolean {
-    // Stellar addresses start with G and are 56 characters long
-    return /^G[A-Z2-7]{55}$/.test(address);
   }
 
   /**
@@ -195,6 +182,6 @@ export class ValidationProvider {
     }
 
     // Issuer must be valid Stellar address
-    return this.isValidStellarAddress(issuer);
+    return StellarAddressValidator.isValid(issuer);
   }
 }

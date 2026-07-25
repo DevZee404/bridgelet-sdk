@@ -32,8 +32,7 @@ export class ClaimDetailsDto {
   asset: string;
 
   @ApiProperty({
-    example:
-      '571a84bc59fefb3fd17fe167b9c76286e83c31972649441a2d09da87f5b997a7',
+    example: '571a84bc59fefb3fd17fe167b9c76286e83c31972649441a2d09da87f5b997a7',
     description: 'Stellar transaction hash of the sweep',
   })
   sweepTxHash: string;

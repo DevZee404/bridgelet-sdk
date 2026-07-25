@@ -1,8 +1,30 @@
 import { registerAs } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { dirname } from 'path';
-import { DataSource, DataSourceOptions } from 'typeorm';
+import { DataSource } from 'typeorm';
 import { fileURLToPath } from 'url';
+import 'dotenv/config';
+
+/**
+ * Connection pool rationale
+ * ─────────────────────────
+ * • min: 2  – Keeps two warm connections ready so the first request after an
+ *             idle period avoids the TCP + TLS + PostgreSQL auth round-trips.
+ * • max: 10 – Caps each NestJS instance to 10 connections. This leaves room
+ *             for other services sharing the same PostgreSQL server and aligns
+ *             with a conservative PgBouncer transaction-mode default.
+ * • acquireTimeoutMillis: 3000 – Fail-fast policy: surface an error after 3 s
+ *             rather than queuing requests silently, which would mask
+ *             connection-leaks or an under-provisioned database.
+ *
+ * The `extra` key is passed verbatim to the underlying `pg` Pool constructor,
+ * which is how TypeORM exposes driver-specific pool configuration for Postgres.
+ */
+const POOL_CONFIG = {
+  min: 2,
+  max: 10,
+  acquireTimeoutMillis: 3000,
+} as const;
 
 export default registerAs(
   'database',
@@ -16,10 +38,16 @@ export default registerAs(
       database: process.env.DATABASE_NAME || 'bridgelet',
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
       migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
-      synchronize: process.env.DATABASE_SYNC === 'true',
+      synchronize: process.env.DATABASE_SYNC === 'false',
       autoLoadEntities: true,
       logging: process.env.DATABASE_LOGGING === 'true',
-      ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: false } : false,
+      // ssl:
+      //   process.env.DATABASE_SSL === 'true'
+      //     ? { rejectUnauthorized: false }
+      //     : false,
+      // Connection pool (see rationale above)
+      poolSize: POOL_CONFIG.max,
+      extra: POOL_CONFIG,
     },
   }),
 );
@@ -36,4 +64,7 @@ export const AppDataSource = new DataSource({
   database: process.env.DATABASE_NAME || 'bridgelet',
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
   migrations: [__dirname + '/../database/migrations/*{.ts,.js}'],
-} as DataSourceOptions);
+  // Connection pool settings (see rationale above)
+  poolSize: POOL_CONFIG.max,
+  extra: POOL_CONFIG,
+});

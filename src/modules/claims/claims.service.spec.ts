@@ -1,361 +1,377 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { ConfigService } from '@nestjs/config';
-import {
-  UnauthorizedException,
-  ConflictException,
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
 import { ClaimsService } from './claims.service.js';
+import { ClaimLookupProvider } from './providers/claim-lookup.provider.js';
 import { TokenVerificationProvider } from './providers/token-verification.provider.js';
 import { ClaimRedemptionProvider } from './providers/claim-redemption.provider.js';
-import { ClaimLookupProvider } from './providers/claim-lookup.provider.js';
-import { Claim } from './entities/claim.entity.js';
-import { Account, AccountStatus } from '../accounts/entities/account.entity.js';
-import { SweepsService } from '../sweeps/sweeps.service.js';
-import { WebhooksService } from '../webhooks/webhooks.service.js';
-import jwt from 'jsonwebtoken';
+import { ClaimDetailsDto } from './dto/claim-details.dto.js';
+import { ClaimVerificationResponseDto } from './dto/claim-verification-response.dto.js';
+import { ClaimRedemptionResponseDto } from './dto/claim-redemption-response.dto.js';
+import { getToken } from '@willsoto/nestjs-prometheus';
 
-// Mock jwt
-jest.mock('jsonwebtoken');
-
-describe('ClaimsService', () => {
+/**
+ * Integration Tests for ClaimsService
+ *
+ * These tests verify that the ClaimsService properly delegates to its providers
+ * and acts as a simple passthrough layer without modifying responses.
+ *
+ * The tests focus on:
+ * - Proper delegation to the correct provider
+ * - Correct parameter passing
+ * - Unmodified response returns
+ *
+ * Note: Provider-specific logic is tested in their respective unit test files:
+ * - ClaimLookupProvider: claim-lookup.provider.spec.ts
+ * - TokenVerificationProvider: token-verification.provider.spec.ts
+ * - ClaimRedemptionProvider: claim-redemption.provider.spec.ts
+ */
+describe('ClaimsService Integration Tests', () => {
   let service: ClaimsService;
-  let tokenVerificationProvider: TokenVerificationProvider;
-  let claimRedemptionProvider: ClaimRedemptionProvider;
-  let claimLookupProvider: ClaimLookupProvider;
+  let claimLookupProvider: jest.Mocked<ClaimLookupProvider>;
+  let tokenVerificationProvider: jest.Mocked<TokenVerificationProvider>;
+  let claimRedemptionProvider: jest.Mocked<ClaimRedemptionProvider>;
 
-  const mockClaimRepository = {
-    create: jest.fn(),
-    save: jest.fn(),
-    findOne: jest.fn(),
+  // Mock data for integration tests
+  const mockClaimId = 'claim-id-123';
+  const mockToken = 'valid.jwt.token';
+  const mockDestinationAddress =
+    'GBULQKZ7SA56UKRI6LX2IB6XH3GJW2L34BMTOWMQFJBAQNPSHJJNOTGN';
+
+  const mockClaimDetails: ClaimDetailsDto = {
+    id: mockClaimId,
+    accountId: 'account-id-456',
+    destinationAddress: mockDestinationAddress,
+    amountSwept: '100.0000000',
+    asset: 'native',
+    sweepTxHash: 'tx-hash-789',
+    claimedAt: new Date('2026-01-14T17:49:20.265Z'),
   };
 
-  const mockAccountRepository = {
-    findOne: jest.fn(),
-    save: jest.fn(),
+  const mockVerificationResponse: ClaimVerificationResponseDto = {
+    valid: true,
+    accountId: 'account-id-456',
+    amount: '100.0000000',
+    asset: 'native',
+    expiresAt: new Date('2026-01-15T17:49:20.265Z'),
   };
 
-  const mockConfigService = {
-    get: jest.fn(),
-    getOrThrow: jest.fn(),
-  };
-
-  const mockSweepsService = {
-    executeSweep: jest.fn(),
-  };
-
-  const mockWebhooksService = {
-    triggerEvent: jest.fn(),
+  const mockRedemptionResponse: ClaimRedemptionResponseDto = {
+    success: true,
+    txHash: 'sweep-tx-hash-abc',
+    amountSwept: '100.0000000',
+    asset: 'native',
+    destination: mockDestinationAddress,
+    sweptAt: new Date('2026-01-14T17:49:20.265Z'),
   };
 
   beforeEach(async () => {
+    // Create mock providers with jest mock functions
+    claimLookupProvider = {
+      findClaimById: jest.fn(),
+    } as any;
+
+    tokenVerificationProvider = {
+      verifyClaimToken: jest.fn(),
+    } as any;
+
+    claimRedemptionProvider = {
+      redeemClaim: jest.fn(),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClaimsService,
-        TokenVerificationProvider,
-        ClaimRedemptionProvider,
-        ClaimLookupProvider,
         {
-          provide: getRepositoryToken(Claim),
-          useValue: mockClaimRepository,
+          provide: ClaimLookupProvider,
+          useValue: claimLookupProvider,
         },
         {
-          provide: getRepositoryToken(Account),
-          useValue: mockAccountRepository,
+          provide: TokenVerificationProvider,
+          useValue: tokenVerificationProvider,
         },
         {
-          provide: ConfigService,
-          useValue: mockConfigService,
+          provide: ClaimRedemptionProvider,
+          useValue: claimRedemptionProvider,
         },
         {
-          provide: SweepsService,
-          useValue: mockSweepsService,
-        },
-        {
-          provide: WebhooksService,
-          useValue: mockWebhooksService,
+          provide: getToken('claim_redemption_total'),
+          useValue: { inc: jest.fn() },
         },
       ],
     }).compile();
 
     service = module.get<ClaimsService>(ClaimsService);
-    tokenVerificationProvider = module.get<TokenVerificationProvider>(
-      TokenVerificationProvider,
-    );
-    claimRedemptionProvider = module.get<ClaimRedemptionProvider>(
-      ClaimRedemptionProvider,
-    );
-    claimLookupProvider = module.get<ClaimLookupProvider>(ClaimLookupProvider);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe('TokenVerificationProvider', () => {
-    const validToken = 'valid.jwt.token';
-    const tokenHash =
-      '2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae';
+  describe('Service Delegation - ClaimLookupProvider', () => {
+    it('should delegate findClaimById to ClaimLookupProvider', async () => {
+      // Arrange: Setup mock to return claim details
+      claimLookupProvider.findClaimById.mockResolvedValue(mockClaimDetails);
 
-    const mockAccount = {
-      id: 'account-id',
-      publicKey: 'GTEST...',
-      claimTokenHash: tokenHash,
-      amount: '100.0000000',
-      asset: 'native',
-      status: AccountStatus.PENDING_CLAIM,
-      expiresAt: new Date(Date.now() + 86400000), // 24 hours from now
-    };
+      // Act: Call the service method
+      const result = await service.findClaimById(mockClaimId);
 
-    const mockDecodedToken = {
-      publicKey: 'GTEST...',
-      type: 'claim',
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    };
-
-    beforeEach(() => {
-      mockConfigService.getOrThrow.mockReturnValue('test-secret');
-      (jwt.verify as jest.Mock).mockReturnValue(mockDecodedToken);
+      // Assert: Verify delegation and response
+      expect(claimLookupProvider.findClaimById).toHaveBeenCalledWith(
+        mockClaimId,
+      );
+      expect(claimLookupProvider.findClaimById).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(mockClaimDetails);
     });
 
-    it('should successfully verify valid token with eligible account', async () => {
-      mockAccountRepository.findOne.mockResolvedValue(mockAccount);
+    it('should pass parameters correctly to ClaimLookupProvider', async () => {
+      // Arrange: Setup mock
+      claimLookupProvider.findClaimById.mockResolvedValue(mockClaimDetails);
 
-      const result =
-        await tokenVerificationProvider.verifyClaimToken(validToken);
+      // Act: Call with specific parameter
+      await service.findClaimById('specific-claim-id');
 
-      expect(result).toEqual({
-        valid: true,
-        accountId: mockAccount.id,
-        amount: mockAccount.amount,
-        asset: mockAccount.asset,
-        expiresAt: mockAccount.expiresAt,
-      });
-      expect(jwt.verify).toHaveBeenCalledWith(validToken, 'test-secret');
+      // Assert: Verify exact parameter was passed
+      expect(claimLookupProvider.findClaimById).toHaveBeenCalledWith(
+        'specific-claim-id',
+      );
     });
 
-    it('should return correct verification response with amount and expiry', async () => {
-      mockAccountRepository.findOne.mockResolvedValue(mockAccount);
+    it('should return ClaimLookupProvider response unchanged', async () => {
+      // Arrange: Setup mock with specific response
+      claimLookupProvider.findClaimById.mockResolvedValue(mockClaimDetails);
 
-      const result =
-        await tokenVerificationProvider.verifyClaimToken(validToken);
+      // Act: Call the service
+      const result = await service.findClaimById(mockClaimId);
 
-      expect(result.valid).toBe(true);
-      expect(result.amount).toBe('100.0000000');
-      expect(result.expiresAt).toBeInstanceOf(Date);
+      // Assert: Verify response is exactly the same (no modification)
+      expect(result).toBe(mockClaimDetails);
+      expect(result).toEqual(mockClaimDetails);
     });
 
-    it('should throw UnauthorizedException for expired JWT', async () => {
-      (jwt.verify as jest.Mock).mockImplementation(() => {
-        const error: any = new Error('jwt expired');
-        error.name = 'TokenExpiredError';
-        throw error;
-      });
+    it('should propagate ClaimLookupProvider errors unchanged', async () => {
+      // Arrange: Setup mock to throw error
+      const error = new Error('Claim not found');
+      claimLookupProvider.findClaimById.mockRejectedValue(error);
 
-      await expect(
-        tokenVerificationProvider.verifyClaimToken(validToken),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw UnauthorizedException for invalid JWT signature', async () => {
-      (jwt.verify as jest.Mock).mockImplementation(() => {
-        const error: any = new Error('invalid signature');
-        error.name = 'JsonWebTokenError';
-        throw error;
-      });
-
-      await expect(
-        tokenVerificationProvider.verifyClaimToken(validToken),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw UnauthorizedException for token with wrong type', async () => {
-      (jwt.verify as jest.Mock).mockReturnValue({
-        ...mockDecodedToken,
-        type: 'access',
-      });
-
-      await expect(
-        tokenVerificationProvider.verifyClaimToken(validToken),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw UnauthorizedException for non-existent account', async () => {
-      mockAccountRepository.findOne.mockResolvedValue(null);
-
-      await expect(
-        tokenVerificationProvider.verifyClaimToken(validToken),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw ConflictException for already claimed account', async () => {
-      mockAccountRepository.findOne.mockResolvedValue({
-        ...mockAccount,
-        status: AccountStatus.CLAIMED,
-      });
-
-      await expect(
-        tokenVerificationProvider.verifyClaimToken(validToken),
-      ).rejects.toThrow(ConflictException);
-    });
-
-    it('should throw UnauthorizedException for expired account', async () => {
-      mockAccountRepository.findOne.mockResolvedValue({
-        ...mockAccount,
-        status: AccountStatus.EXPIRED,
-      });
-
-      await expect(
-        tokenVerificationProvider.verifyClaimToken(validToken),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw BadRequestException for account without payment', async () => {
-      mockAccountRepository.findOne.mockResolvedValue({
-        ...mockAccount,
-        status: AccountStatus.PENDING_PAYMENT,
-      });
-
-      await expect(
-        tokenVerificationProvider.verifyClaimToken(validToken),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw UnauthorizedException when current time exceeds expiry', async () => {
-      mockAccountRepository.findOne.mockResolvedValue({
-        ...mockAccount,
-        expiresAt: new Date(Date.now() - 1000), // Already expired
-      });
-
-      await expect(
-        tokenVerificationProvider.verifyClaimToken(validToken),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-  });
-
-  describe('ClaimLookupProvider', () => {
-    const claimId = 'claim-id-123';
-
-    const mockClaim = {
-      id: claimId,
-      accountId: 'account-id',
-      destinationAddress: 'GDEST...',
-      amountSwept: '100.0000000',
-      asset: 'native',
-      sweepTxHash: 'tx-hash',
-      claimedAt: new Date('2026-01-14T17:49:20.265Z'),
-      account: {
-        id: 'account-id',
-        publicKey: 'GTEST...',
-      },
-    };
-
-    it('should retrieve claim by ID with account relation', async () => {
-      mockClaimRepository.findOne.mockResolvedValue(mockClaim);
-
-      await claimLookupProvider.findClaimById(claimId);
-
-      expect(mockClaimRepository.findOne).toHaveBeenCalledWith({
-        where: { id: claimId },
-        relations: ['account'],
-      });
-    });
-
-    it('should return properly formatted ClaimDetailsDto', async () => {
-      mockClaimRepository.findOne.mockResolvedValue(mockClaim);
-
-      const result = await claimLookupProvider.findClaimById(claimId);
-
-      expect(result).toEqual({
-        id: mockClaim.id,
-        accountId: mockClaim.accountId,
-        destinationAddress: mockClaim.destinationAddress,
-        amountSwept: mockClaim.amountSwept,
-        asset: mockClaim.asset,
-        sweepTxHash: mockClaim.sweepTxHash,
-        claimedAt: mockClaim.claimedAt,
-      });
-    });
-
-    it('should throw NotFoundException when claim does not exist', async () => {
-      mockClaimRepository.findOne.mockResolvedValue(null);
-
-      await expect(claimLookupProvider.findClaimById(claimId)).rejects.toThrow(
-        NotFoundException,
+      // Act & Assert: Verify error is propagated
+      await expect(service.findClaimById(mockClaimId)).rejects.toThrow(
+        'Claim not found',
       );
     });
   });
 
-  describe('ClaimsService Integration - Token & Lookup', () => {
-    const validToken = 'valid.jwt.token';
-    const claimId = 'claim-id';
-
-    const mockVerificationResponse = {
-      valid: true,
-      accountId: 'account-id',
-      amount: '100.0000000',
-      asset: 'native',
-      expiresAt: new Date(),
-    };
-
-    const mockClaimDetails = {
-      id: claimId,
-      accountId: 'account-id',
-      destinationAddress:
-        'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
-      amountSwept: '100.0000000',
-      asset: 'native',
-      sweepTxHash: 'tx-hash',
-      claimedAt: new Date(),
-    };
-
+  describe('Service Delegation - TokenVerificationProvider', () => {
     it('should delegate verifyClaimToken to TokenVerificationProvider', async () => {
-      jest
-        .spyOn(tokenVerificationProvider, 'verifyClaimToken')
-        .mockResolvedValue(mockVerificationResponse);
+      // Arrange: Setup mock to return verification response
+      tokenVerificationProvider.verifyClaimToken.mockResolvedValue(
+        mockVerificationResponse,
+      );
 
-      const result = await service.verifyClaimToken(validToken);
+      // Act: Call the service method
+      const result = await service.verifyClaimToken(mockToken);
 
+      // Assert: Verify delegation and response
       expect(tokenVerificationProvider.verifyClaimToken).toHaveBeenCalledWith(
-        validToken,
+        mockToken,
+      );
+      expect(tokenVerificationProvider.verifyClaimToken).toHaveBeenCalledTimes(
+        1,
       );
       expect(result).toEqual(mockVerificationResponse);
     });
 
-    it('should delegate findClaimById to ClaimLookupProvider', async () => {
-      jest
-        .spyOn(claimLookupProvider, 'findClaimById')
-        .mockResolvedValue(mockClaimDetails);
+    it('should pass parameters correctly to TokenVerificationProvider', async () => {
+      // Arrange: Setup mock
+      tokenVerificationProvider.verifyClaimToken.mockResolvedValue(
+        mockVerificationResponse,
+      );
 
-      const result = await service.findClaimById(claimId);
+      // Act: Call with specific token
+      await service.verifyClaimToken('specific-jwt-token');
 
-      expect(claimLookupProvider.findClaimById).toHaveBeenCalledWith(claimId);
-      expect(result).toEqual(mockClaimDetails);
-    });
-
-    it('should properly pass parameters to providers', async () => {
-      jest
-        .spyOn(tokenVerificationProvider, 'verifyClaimToken')
-        .mockResolvedValue(mockVerificationResponse);
-
-      await service.verifyClaimToken(validToken);
-
+      // Assert: Verify exact parameter was passed
       expect(tokenVerificationProvider.verifyClaimToken).toHaveBeenCalledWith(
-        validToken,
+        'specific-jwt-token',
       );
     });
 
-    it('should return provider responses unchanged', async () => {
-      jest
-        .spyOn(tokenVerificationProvider, 'verifyClaimToken')
-        .mockResolvedValue(mockVerificationResponse);
+    it('should return TokenVerificationProvider response unchanged', async () => {
+      // Arrange: Setup mock with specific response
+      tokenVerificationProvider.verifyClaimToken.mockResolvedValue(
+        mockVerificationResponse,
+      );
 
-      const result = await service.verifyClaimToken(validToken);
+      // Act: Call the service
+      const result = await service.verifyClaimToken(mockToken);
 
+      // Assert: Verify response is exactly the same (no modification)
       expect(result).toBe(mockVerificationResponse);
+      expect(result).toEqual(mockVerificationResponse);
+    });
+
+    it('should propagate TokenVerificationProvider errors unchanged', async () => {
+      // Arrange: Setup mock to throw error
+      const error = new Error('Invalid token');
+      tokenVerificationProvider.verifyClaimToken.mockRejectedValue(error);
+
+      // Act & Assert: Verify error is propagated
+      await expect(service.verifyClaimToken(mockToken)).rejects.toThrow(
+        'Invalid token',
+      );
+    });
+  });
+
+  describe('Service Delegation - ClaimRedemptionProvider', () => {
+    it('should delegate redeemClaim to ClaimRedemptionProvider', async () => {
+      // Arrange: Setup mock to return redemption response
+      claimRedemptionProvider.redeemClaim.mockResolvedValue(
+        mockRedemptionResponse,
+      );
+
+      // Act: Call the service method
+      const result = await service.redeemClaim(
+        mockToken,
+        mockDestinationAddress,
+      );
+
+      // Assert: Verify delegation and response
+      expect(claimRedemptionProvider.redeemClaim).toHaveBeenCalledWith(
+        mockToken,
+        mockDestinationAddress,
+      );
+      expect(claimRedemptionProvider.redeemClaim).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(mockRedemptionResponse);
+    });
+
+    it('should pass parameters correctly to ClaimRedemptionProvider', async () => {
+      // Arrange: Setup mock
+      claimRedemptionProvider.redeemClaim.mockResolvedValue(
+        mockRedemptionResponse,
+      );
+
+      // Act: Call with specific parameters
+      await service.redeemClaim('specific-token', 'specific-destination');
+
+      // Assert: Verify exact parameters were passed
+      expect(claimRedemptionProvider.redeemClaim).toHaveBeenCalledWith(
+        'specific-token',
+        'specific-destination',
+      );
+    });
+
+    it('should return ClaimRedemptionProvider response unchanged', async () => {
+      // Arrange: Setup mock with specific response
+      claimRedemptionProvider.redeemClaim.mockResolvedValue(
+        mockRedemptionResponse,
+      );
+
+      // Act: Call the service
+      const result = await service.redeemClaim(
+        mockToken,
+        mockDestinationAddress,
+      );
+
+      // Assert: Verify response is exactly the same (no modification)
+      expect(result).toBe(mockRedemptionResponse);
+      expect(result).toEqual(mockRedemptionResponse);
+    });
+
+    it('should propagate ClaimRedemptionProvider errors unchanged', async () => {
+      // Arrange: Setup mock to throw error
+      const error = new Error('Sweep failed');
+      claimRedemptionProvider.redeemClaim.mockRejectedValue(error);
+
+      // Act & Assert: Verify error is propagated
+      await expect(
+        service.redeemClaim(mockToken, mockDestinationAddress),
+      ).rejects.toThrow('Sweep failed');
+    });
+  });
+
+  describe('Service Integration - Combined Operations', () => {
+    it('should handle multiple provider calls in sequence', async () => {
+      // Arrange: Setup mocks for all providers
+      tokenVerificationProvider.verifyClaimToken.mockResolvedValue(
+        mockVerificationResponse,
+      );
+      claimRedemptionProvider.redeemClaim.mockResolvedValue(
+        mockRedemptionResponse,
+      );
+      claimLookupProvider.findClaimById.mockResolvedValue(mockClaimDetails);
+
+      // Act: Call multiple service methods
+      const verificationResult = await service.verifyClaimToken(mockToken);
+      const redemptionResult = await service.redeemClaim(
+        mockToken,
+        mockDestinationAddress,
+      );
+      const claimResult = await service.findClaimById(mockClaimId);
+
+      // Assert: Verify all providers were called correctly
+      expect(tokenVerificationProvider.verifyClaimToken).toHaveBeenCalledWith(
+        mockToken,
+      );
+      expect(claimRedemptionProvider.redeemClaim).toHaveBeenCalledWith(
+        mockToken,
+        mockDestinationAddress,
+      );
+      expect(claimLookupProvider.findClaimById).toHaveBeenCalledWith(
+        mockClaimId,
+      );
+
+      // Verify responses are unchanged
+      expect(verificationResult).toEqual(mockVerificationResponse);
+      expect(redemptionResult).toEqual(mockRedemptionResponse);
+      expect(claimResult).toEqual(mockClaimDetails);
+    });
+
+    it('should maintain service isolation between provider calls', async () => {
+      // Arrange: Setup mocks with different responses
+      tokenVerificationProvider.verifyClaimToken.mockResolvedValue({
+        ...mockVerificationResponse,
+        accountId: 'account-1',
+      });
+      claimRedemptionProvider.redeemClaim.mockResolvedValue({
+        ...mockRedemptionResponse,
+        txHash: 'tx-1',
+      });
+      claimLookupProvider.findClaimById.mockResolvedValue({
+        ...mockClaimDetails,
+        id: 'claim-1',
+      });
+
+      // Act: Call methods with different parameters
+      const result1 = await service.verifyClaimToken('token-1');
+      const result2 = await service.redeemClaim('token-2', 'dest-2');
+      const result3 = await service.findClaimById('claim-3');
+
+      // Assert: Verify each call is independent and correct
+      expect(tokenVerificationProvider.verifyClaimToken).toHaveBeenCalledWith(
+        'token-1',
+      );
+      expect(claimRedemptionProvider.redeemClaim).toHaveBeenCalledWith(
+        'token-2',
+        'dest-2',
+      );
+      expect(claimLookupProvider.findClaimById).toHaveBeenCalledWith('claim-3');
+
+      expect(result1.accountId).toBe('account-1');
+      expect(result2.txHash).toBe('tx-1');
+      expect(result3.id).toBe('claim-1');
+    });
+  });
+
+  describe('Service Instantiation', () => {
+    it('should be properly instantiated with all dependencies', () => {
+      // Assert: Service should be defined and have all providers injected
+      expect(service).toBeDefined();
+      expect(service).toBeInstanceOf(ClaimsService);
+    });
+
+    it('should have all required methods available', () => {
+      // Assert: All public methods should be available
+      expect(typeof service.findClaimById).toBe('function');
+      expect(typeof service.verifyClaimToken).toBe('function');
+      expect(typeof service.redeemClaim).toBe('function');
     });
   });
 });

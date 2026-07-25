@@ -20,6 +20,8 @@ lerna-debug.log*
 
 # Tests
 /coverage
+/coverage-issue-49
+/coverage-*/
 /.nyc_output
 
 # IDEs and editors
@@ -57,3 +59,7 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# personal maintainer note 
+# DO NOT EDIT!!!
+contributeNote.md

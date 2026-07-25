@@ -1,0 +1,274 @@
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
+import * as StellarSdk from '@stellar/stellar-sdk';
+import { StellarService } from '../stellar.service.js';
+import { Account } from '../../../modules/accounts/entities/account.entity.js';
+import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
+
+/**
+ * PaymentMonitorProvider - Horizon SSE-based payment detection
+ *
+ * Watches active ephemeral accounts for inbound Stellar payments using
+ * Horizon's server-sent event stream. When a payment is detected it:
+ *   1. Calls StellarService.recordPayment() to register it on the contract
+ *   2. Updates the account status to PENDING_CLAIM in the database
+ *
+ * Lifecycle:
+ *   - watch(account)       called by AccountsService immediately after creation
+ *   - unwatch(accountId)   called internally when a terminal state is reached
+ *   - onModuleDestroy()    closes all open streams on shutdown
+ *
+ * Idempotency:
+ *   DuplicateAsset errors from the contract are treated as no-ops - the stream
+ *   may emit duplicate events and that is handled here, not in StellarService.
+ */
+
+@Injectable()
+export class PaymentMonitorProvider implements OnModuleDestroy {
+  private readonly logger = new Logger(PaymentMonitorProvider.name);
+
+  /** accountId → active EventSource close handle */
+  private readonly streams = new Map<string, () => void>();
+
+  private horizonServer: StellarSdk.Horizon.Server;
+
+  constructor(
+    @InjectRepository(Account)
+    private readonly accountsRepository: Repository<Account>,
+    private readonly stellarService: StellarService,
+    private readonly configService: ConfigService,
+  ) {
+    const horizonUrl =
+      this.configService.getOrThrow<string>('stellar.horizonUrl');
+    this.horizonServer = new StellarSdk.Horizon.Server(horizonUrl);
+  }
+
+  /**
+   * Opens a Horizon payment SSE stream for the given account.
+   * Safe to call multiple times for the same account — subsequent calls are
+   * ignored if a stream is already active.
+   */
+  watch(account: Account): void {
+    if (this.streams.has(account.id)) {
+      this.logger.debug(
+        `Already watching account ${account.id} (${account.publicKey})`,
+      );
+      return;
+    }
+
+    this.logger.log(
+      `Starting payment stream for account ${account.id} (${account.publicKey})`,
+    );
+
+    const closeStream = this.horizonServer
+      .payments()
+      .forAccount(account.publicKey)
+      .cursor('now') // only react to new payments, not historical ones
+      .stream({
+        onmessage: (record) => {
+          if ((record.type as string) !== 'payment') return;
+          void this.handlePaymentEvent(
+            account,
+            record as StellarSdk.Horizon.ServerApi.PaymentOperationRecord,
+          );
+        },
+        onerror: (err) => {
+          const errMsg =
+            err instanceof Error ? err.message : JSON.stringify(err);
+          this.logger.error(
+            `Stream error for account ${account.id}: ${errMsg}`,
+          );
+        },
+      });
+
+    this.streams.set(account.id, closeStream);
+  }
+
+  /**
+   * Stops watching an account and closes its SSE stream.
+   * Called automatically when a terminal status is reached.
+   */
+  unwatch(accountId: string): void {
+    const close = this.streams.get(accountId);
+    if (!close) return;
+
+    close();
+    this.streams.delete(accountId);
+    this.logger.log(`Stopped payment stream for account ${accountId}`);
+  }
+
+  /** Close all open streams gracefully on app shutdown. */
+  onModuleDestroy(): void {
+    this.logger.log(
+      `Closing ${this.streams.size} active payment stream(s) on shutdown`,
+    );
+    for (const [id, close] of this.streams) {
+      close();
+      this.logger.debug(`Closed stream for account ${id}`);
+    }
+    this.streams.clear();
+  }
+
+  /**
+   * Restores monitoring for all accounts that are still in PENDING_PAYMENT
+   * status at startup. This ensures that accounts created before a restart
+   * are not silently orphaned.
+   *
+   * Should be called once from AccountsModule's onApplicationBootstrap hook.
+   */
+  async restoreActiveStreams(): Promise<void> {
+    const active = await this.accountsRepository.find({
+      where: { status: AccountStatus.PENDING_PAYMENT },
+    });
+
+    if (active.length === 0) {
+      this.logger.log('No active accounts to restore monitoring for');
+      return;
+    }
+
+    this.logger.log(
+      `Restoring payment monitoring for ${active.length} account(s)`,
+    );
+    for (const account of active) {
+      this.watch(account);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private
+  // ---------------------------------------------------------------------------
+
+  private async handlePaymentEvent(
+    account: Account,
+    record: StellarSdk.Horizon.ServerApi.PaymentOperationRecord,
+  ): Promise<void> {
+    // Only handle inbound payments to this account's address
+    if (record.to !== account.publicKey) return;
+
+    this.logger.log(
+      `Inbound payment detected for account ${account.id}: ` +
+        `${record.amount} ${record.asset_code ?? 'XLM'} from ${record.from}`,
+    );
+
+    const contractId = this.configService.getOrThrow<string>(
+      'stellar.ephemeralContractId',
+    );
+    const signerSecret = this.configService.getOrThrow<string>(
+      'stellar.fundingSecret',
+    );
+
+    // Derive asset contract address from the Horizon payment record.
+    // XLM (native) is represented as the zero contract address on Soroban.
+    const assetAddress = this.resolveAssetAddress(record);
+
+    // Convert the decimal amount string from Horizon to i128 bigint (stroops).
+    // Stellar amounts have 7 decimal places: 1 XLM = 10_000_000 stroops.
+    const amountBigint = this.parseAmountToStroops(record.amount);
+
+    try {
+      await this.stellarService.recordPayment({
+        contractId,
+        amount: amountBigint,
+        assetAddress,
+        signerSecret,
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+
+      // DuplicateAsset means the contract already has this payment recorded.
+      // This can happen if the stream emits a duplicate event — treat as no-op.
+      if (msg.includes('DuplicateAsset')) {
+        this.logger.warn(
+          `Duplicate payment event ignored for account ${account.id} ` +
+            `(asset already recorded on contract)`,
+        );
+        return;
+      }
+
+      // TooManyPayments and InvalidAmount are non-retryable contract errors.
+      // Log and stop watching — the account is in a bad state.
+      if (msg.includes('TooManyPayments') || msg.includes('InvalidAmount')) {
+        this.logger.error(
+          `Non-retryable contract error for account ${account.id}: ${msg}. ` +
+            `Stopping monitor.`,
+        );
+        this.unwatch(account.id);
+        await this.markAccountFailed(account.id);
+        return;
+      }
+
+      // Transient/unknown errors — log but leave the stream open so it retries
+      // on the next payment event or on the next duplicate event from Horizon.
+      this.logger.error(
+        `recordPayment() failed for account ${account.id}: ${msg}`,
+      );
+      return;
+    }
+
+    // recordPayment() succeeded — update DB status and stop watching
+    await this.markAccountPendingClaim(account.id);
+    this.unwatch(account.id);
+  }
+
+  private async markAccountPendingClaim(accountId: string): Promise<void> {
+    await this.accountsRepository.update(accountId, {
+      status: AccountStatus.PENDING_CLAIM,
+    });
+    this.logger.log(`Account ${accountId} status → PENDING_CLAIM`);
+  }
+
+  private async markAccountFailed(accountId: string): Promise<void> {
+    await this.accountsRepository.update(accountId, {
+      status: AccountStatus.FAILED,
+    });
+    this.logger.warn(`Account ${accountId} status → FAILED`);
+  }
+
+  /**
+   * Converts a Horizon payment record's asset to the Soroban contract address
+   * expected by recordPayment().
+   *
+   * For non-native assets the contract address is the Stellar Asset Contract (SAC)
+   * address, which Stellar derives deterministically from the classic asset.
+   * For native XLM the SAC address is derived from the native asset.
+   */
+  private resolveAssetAddress(
+    record: StellarSdk.Horizon.ServerApi.PaymentOperationRecord,
+  ): string {
+    let asset: StellarSdk.Asset;
+
+    if (record.asset_type === 'native') {
+      asset = StellarSdk.Asset.native();
+    } else {
+      if (!record.asset_code || !record.asset_issuer) {
+        throw new Error(
+          `Payment record missing asset_code or asset_issuer for account ${record.to}`,
+        );
+      }
+      asset = new StellarSdk.Asset(record.asset_code, record.asset_issuer);
+    }
+
+    // contractId() returns the SAC address for a given network passphrase
+    const networkPassphrase =
+      this.configService.getOrThrow<string>('stellar.network') === 'mainnet'
+        ? StellarSdk.Networks.PUBLIC
+        : StellarSdk.Networks.TESTNET;
+
+    return asset.contractId(networkPassphrase);
+  }
+
+  /**
+   * Converts a Horizon decimal amount string (e.g. "100.5000000") to stroops
+   * as a bigint for the i128 contract parameter.
+   * 1 unit = 10_000_000 stroops (7 decimal places).
+   */
+  private parseAmountToStroops(amount: string): bigint {
+    // Split on decimal point
+    const [whole, fraction = ''] = amount.split('.');
+    // Pad or truncate fraction to exactly 7 digits
+    const paddedFraction = fraction.padEnd(7, '0').slice(0, 7);
+    return BigInt(whole) * 10_000_000n + BigInt(paddedFraction);
+  }
+}

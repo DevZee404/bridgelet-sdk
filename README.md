@@ -2,9 +2,65 @@
 
 **Backend SDK for ephemeral Stellar account management**
 
+**MVP Stubs**
+
+> 🚧 **MVP — Active Development:** encryptSecret() — base64, not real encryption, must be replaced before any production deployment
+> 🚧 **The expiresIn → expiry_ledger conversion** — needs verification or explicit documentation of where it happens
+> 🚧 **Webhook coverage gaps**
+
 ## Overview
 
 The Bridgelet SDK is a NestJS-based backend service that manages the lifecycle of ephemeral Stellar accounts. It handles account creation, claim authentication, webhook notifications, and integration with the bridgelet-core smart contracts.
+
+---
+
+## ⚠️ TEMPORARY DEVELOPMENT WORKAROUNDS (IMPORTANT)
+
+**PLEASE READ THIS SECTION BEFORE DEVELOPMENT**
+
+The following services/imports are currently **commented out** to allow `npm run start:dev` to run without errors. These are **NOT removed** and **MUST be restored** once proper implementations exist.
+
+### Missing Services:
+
+1. **WebhooksService** (referenced in `src/modules/claims/providers/claim-redemption.provider.ts`)
+   - **Location:** `src/modules/webhooks/` (does not exist yet)
+   - **What was commented out:**
+     - Constructor dependency injection (line ~25)
+     - Webhook trigger for `sweep.completed` event (line ~106)
+     - Webhook trigger for `sweep.failed` event (line ~137)
+   - **Why:** Service implementation does not exist, causing TypeScript compilation errors
+   - **Impact:** Webhook notifications will NOT fire when claims are redeemed or when sweeps fail
+   - **Restoration required:** Once `WebhooksService` is implemented in `src/modules/webhooks/`, uncomment all marked sections
+
+### How to Find Temporary Changes:
+
+1. Search the codebase for comments containing `TEMPORARY:` to locate all commented-out code that needs restoration..
+
+2. **Secret Encryption** (`src/modules/accounts/accounts.service.ts`)
+   - **Current:** Base64 encoding (NOT encryption)
+   - **Impact:** Ephemeral secret keys are not protected at rest
+   - **Required:** AES-256-GCM or KMS-backed encryption before any deployment
+     with real funds
+
+3. **Ledger Expiry Conversion**
+   - `CreateAccountDto.expiresIn` (seconds) is not yet converted to
+     `expiry_ledger` (u32 ledger sequence) required by the contract
+   - `expiresAt` Date is currently unused in `StellarService`
+   - Conversion formula: `current_ledger + (expiresIn / 5)`
+4. **Sweep Authorization Signature** (`src/modules/sweeps/providers/contract.provider.ts`)
+   - **Current:** `generateAuthSignature()` produces a fake 64-byte stub signature
+   - **Works because:** `EphemeralAccount.verify_sweep_authorization()` in `bridgelet-core`
+     is also a stub that accepts any signature (documented in bridgelet-core README)
+   - **Impact:** Sweep authorization is not cryptographically enforced in development
+   - **Guard:** Method throws if called outside `development` or `test` environments
+   - **Required:** Real Ed25519 signing against the `SweepController`'s `authorized_signer`
+     once `bridgelet-core` implements real verification.
+
+### Status:
+
+This is a **temporary stabilization** to enable local development and onboarding until missing implementations are complete. **No code was deleted** - all logic remains in place as comments.
+
+---
 
 ## Tech Stack
 
@@ -13,6 +69,21 @@ The Bridgelet SDK is a NestJS-based backend service that manages the lifecycle o
 - **ORM:** TypeORM
 - **Blockchain:** Stellar SDK + Soroban RPC
 - **API:** REST api
+
+### Stellar SDK Version
+
+`@stellar/stellar-sdk` is pinned to an **exact version** (`14.6.1`) in `package.json` — no caret or tilde range — for the following reasons:
+
+- The SDK exposes raw Stellar XDR and Soroban RPC types. A minor or patch bump can change serialization behaviour, breaking transaction building or contract call encoding in ways that are difficult to detect without end-to-end tests against a live network.
+- Exact pinning makes the dependency tree fully reproducible across developer machines and CI without relying on lock-file-only guarantees.
+
+**Upgrade process:**
+
+1. Update the version in `package.json` to the new exact version.
+2. Run `npm install` to update `package-lock.json`.
+3. Run the full test suite: `npm test`.
+4. Manually test account creation, sweep, and expiry flows against **testnet** before merging.
+5. Only promote to production after all testnet checks pass.
 
 ## Features
 
@@ -23,6 +94,7 @@ The Bridgelet SDK is a NestJS-based backend service that manages the lifecycle o
 - Admin dashboard API endpoints
 
 ## Project Structure
+
 ```
 src/
 ├── modules/
@@ -37,9 +109,13 @@ src/
 │   └── filters/         # Exception filters
 ├── config/              # Environment configuration
 └── database/            # Migrations, entities
+
+scripts/
+└── generate-migrations.sh  # Regenerates src/database/migrations/ from scratch
 ```
 
 ## Installation
+
 ```bash
 # Install dependencies
 npm install
@@ -48,14 +124,72 @@ npm install
 cp .env.example .env
 # Edit .env with your configuration
 
-# Run migrations
+# Run database migrations
+# DataSource config : src/config/typeorm.config.ts
+# Migrations        : src/database/migrations/
+#   1718100000000-CreateAccountsTable              (accounts table, status enum, expiredAt, metadata)
+#   1718100001000-CreateClaimsTable                (claims table + FK to accounts)
+#   1718100002000-AddInitializingToAccountStatus   (adds INITIALIZING to account_status enum)
+#   1718100003000-CreateWebhooksTable              (webhooks table)
+#   1718100004000-AddClaimingToAccountStatus       (adds CLAIMING to account_status enum)
+#   1718100005000-CreateWebhookDeliveriesTable     (webhook delivery attempt log table)
+#   1718100006000-AddHighTrafficIndexes            (accounts composite and range indexes)
+#   1718100007000-CreateContractEventsTable        (Soroban contract event index table)
+#   1718100008000-AddDeletedAtToAccountsTable      (soft-delete column + index on accounts)
+#   1718100008000-AddPartialSweepToAccountStatus   (adds PARTIAL_SWEEP to account_status enum)
+#   1718100008000-CreateClaimAuditLogTable         (claim attempt audit log table)
 npm run migration:run
 
 # Start development server
 npm run start:dev
 ```
 
+### Regenerating the migrations folder
+
+`src/database/migrations/` is scripted rather than hand-maintained. `scripts/generate-migrations.sh` deletes the folder and rewrites every file listed above verbatim, so the folder on disk is always reproducible from the script instead of relying on files someone created by hand.
+
+```bash
+# Recreate src/database/migrations/ from the script (prompts for confirmation)
+./scripts/generate-migrations.sh
+
+# Same, but skip the confirmation prompt (useful in CI)
+./scripts/generate-migrations.sh --yes
+```
+
+This does **not** apply migrations to a database — it only (re)writes the `.ts` files. Run `npm run migration:run` afterwards as usual. See [`CONTRIBUTING.md`](./CONTRIBUTING.md#database-migrations) for the workflow to follow when adding a _new_ migration.
+
+## Tests
+
+```bash
+npm test
+
+## or to run specific tests
+npm test -- test_Service_File_Name
+
+## e.g
+npm test -- sweeps.service.spec.ts
+```
+
+### Coverage
+
+Run the full coverage report (enforces 80% minimum threshold):
+
+```bash
+npm run test:cov
+```
+
+Coverage reports are generated in the `coverage/` directory. The build will fail if any metric (branches, functions, lines, statements) falls below 80%.
+
+The repository also includes an embedded-Postgres integration test in `src/database/migrations.integration.spec.ts` that starts a fresh PostgreSQL instance, runs all current migrations, verifies the resulting schema matches the TypeORM entities, checks the `account_status_enum` values, confirms the `claims.accountId -> accounts.id` and `webhook_deliveries.subscription_id -> webhooks.id` foreign keys are enforced, verifies the high-traffic `accounts` indexes added by migration `1718100006000`, and verifies the `contract_events` table shape.
+
+To check coverage for a specific file:
+
+```bash
+npm test -- sweeps.service.spec.ts --coverage
+```
+
 ## Environment Variables
+
 ```env
 # Database
 DATABASE_HOST=localhost
@@ -81,22 +215,26 @@ NODE_ENV=development
 ## API Documentation
 
 Once running, access API docs at:
+
 - Swagger: `http://localhost:3000/api/docs`
 
 ## Key Endpoints
 
-POST   /accounts          # Create ephemeral account
-GET    /accounts/:id      # Get account details
-POST   /claims/initiate   # Generate claim token
-POST   /claims/redeem     # Redeem claim and sweep
-GET    /webhooks          # List webhook subscriptions
-POST   /webhooks          # Subscribe to events
+POST /accounts # Create ephemeral account
+GET /accounts/:id # Get account details
+POST /claims/initiate # Generate claim token
+POST /claims/redeem # Redeem claim and sweep
+GET /webhooks # List webhook subscriptions
+POST /webhooks # Subscribe to events
+PUT /webhooks/:id # Update webhook subscription (e.g. URL, events)
+DELETE /webhooks/:id # Delete webhook subscription
 
 ## Database Schema
 
 See [Database Schema Documentation](./docs/database-schema.md)
 
 ## Development
+
 ```bash
 # Run tests
 npm run test
@@ -110,6 +248,67 @@ npm run lint
 # Format
 npm run format
 ```
+
+# Contributing
+
+## Automated PR Naming Checks
+
+All pull requests are validated automatically for branch naming and PR title format.
+
+- During the initial rollout, checks run in warning mode until **2026-02-27**.
+- After that date, pull requests are blocked until naming issues are fixed.
+
+### Branch Name Format
+
+Accepted pattern:
+
+`(fix|feature|test|chore|docs)/issue-NUMBER-brief-description`
+
+Regex used by CI:
+
+`^(fix|feature|test|chore|docs)/issue-[0-9]+-[a-z0-9-]+$`
+
+Examples:
+
+- `fix/issue-42-jwt-error-handling`
+- `feature/issue-50-webhook-service`
+
+`main` and `develop` are exempt for release/hotfix workflows.
+
+### PR Title Format
+
+Accepted pattern:
+
+`(Fix|Feature|Test|Chore|Docs): Brief description (#NUMBER)`
+
+Regex used by CI:
+
+`^(Fix|Feature|Test|Chore|Docs): .+ \(#[0-9]+\)$`
+
+Examples:
+
+- `Fix: Handle JWT errors in TokenVerificationProvider (#42)`
+- `Test: Add unit tests for ClaimLookupProvider (#43)`
+
+### How To Fix A Branch Name
+
+Rename your local branch and push the new branch:
+
+```bash
+git branch -m fix/issue-42-jwt-error-handling
+git push origin -u fix/issue-42-jwt-error-handling
+```
+
+Then update the PR to use the renamed branch. If needed, close the old PR and open a new one from the renamed branch.
+
+### How To Fix A PR Title
+
+Edit the PR title directly in GitHub:
+
+1. Open the pull request.
+2. Click the title field.
+3. Update it to the required format.
+4. Save changes.
 
 ## Deployment
 
@@ -127,6 +326,7 @@ Visit http://localhost:3000/api/docs for API documentation.
 See [Getting Started Guide](../docs/getting-started.pdf) for full setup instructions.
 
 ## Support
+
 (Nest)[https://nestjs.com](https://nestjs.com/)
 
 ## License
