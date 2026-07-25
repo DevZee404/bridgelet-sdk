@@ -1,6 +1,12 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindManyOptions, LessThan, MoreThan, Repository } from 'typeorm';
+import {
+  FindManyOptions,
+  LessThan,
+  MoreThan,
+  Repository,
+  IsNull,
+} from 'typeorm';
 import * as crypto from 'crypto';
 import { Webhook } from './entities/webhook.entity.js';
 import { WebhookDelivery } from './entities/webhook-delivery.entity.js';
@@ -87,7 +93,7 @@ export class WebhooksService {
     if (success !== undefined) {
       query.where = {
         ...query.where,
-        deliveredAt: success ? MoreThan(new Date(0)) : null,
+        deliveredAt: success ? MoreThan(new Date(0)) : IsNull(),
       };
     }
 

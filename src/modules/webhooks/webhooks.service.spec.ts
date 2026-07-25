@@ -116,10 +116,12 @@ describe('WebhooksService', () => {
       const webhook = makeWebhook();
       mockWebhookRepository.find.mockResolvedValue([webhook]);
 
-      const result = await service.findAll();
+      const result = await service.findAll({});
 
       expect(mockWebhookRepository.find).toHaveBeenCalledWith({
         where: { isActive: true },
+        take: 25,
+        order: { createdAt: 'DESC' },
       });
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({ id: webhook.id, url: webhook.url });
