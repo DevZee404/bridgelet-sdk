@@ -5,6 +5,7 @@ import { CreateWebhookDto } from './dto/create-webhook.dto.js';
 import { WebhookResponseDto } from './dto/webhook-response.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { makeWebhookResponse as webhookResponseFactory } from '../../testing/factories/webhook.factory.js';
 
 const mockWebhooksService = {
   create: jest.fn(),
@@ -14,16 +15,12 @@ const mockWebhooksService = {
 };
 
 function makeWebhookResponse(overrides = {}): WebhookResponseDto {
-  return {
+  return webhookResponseFactory({
     id: 'wh-uuid-1',
     url: 'https://api.example.com/hooks',
     events: ['account.created'],
-    isActive: true,
-    description: null,
-    lastTriggeredAt: null,
-    createdAt: new Date('2026-01-01'),
     ...overrides,
-  };
+  });
 }
 
 describe('WebhooksController', () => {

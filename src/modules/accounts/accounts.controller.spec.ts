@@ -6,8 +6,10 @@ import { CreateAccountDto } from './dto/create-account.dto.js';
 import { AccountResponseDto } from './dto/account-response.dto.js';
 import { ApiKeyAuthGuard } from '../../common/guards/api-key-auth.guard.js';
 import { ThrottlerGuard } from '@nestjs/throttler';
-
-const VALID_KEY = 'G' + 'A'.repeat(55);
+import {
+  makeAccountResponse,
+  DEFAULT_PUBLIC_KEY as VALID_KEY,
+} from '../../testing/factories/account.factory.js';
 
 const mockAccountsService = {
   create: jest.fn(),
@@ -16,18 +18,7 @@ const mockAccountsService = {
 };
 
 function makeResponse(overrides = {}): AccountResponseDto {
-  return {
-    accountId: 'uuid-1',
-    publicKey: VALID_KEY,
-    claimUrl: 'https://claim.bridgelet.io/c/token',
-    txHash: 'txhash',
-    amount: '100',
-    asset: 'native',
-    status: AccountStatus.PENDING_PAYMENT,
-    expiresAt: new Date('2099-01-01'),
-    createdAt: new Date('2026-01-01'),
-    ...overrides,
-  };
+  return makeAccountResponse({ accountId: 'uuid-1', ...overrides });
 }
 
 describe('AccountsController', () => {

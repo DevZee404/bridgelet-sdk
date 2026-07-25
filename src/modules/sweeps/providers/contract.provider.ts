@@ -123,13 +123,48 @@ export class ContractProvider {
     }
   }
 
+  /**
+   * Generate an Ed25519 authorization signature for a sweep operation.
+   *
+   * ENVIRONMENT BEHAVIOR:
+   * - development / test: delegates to SweepSignerUtil which accepts any valid
+   *   32-byte seed (a dummy seed is fine because bridgelet-core's
+   *   verify_sweep_authorization() is also a stub in these environments).
+   * - production: throws immediately — a real SWEEP_SIGNING_KEY_SEED tied to
+   *   the SweepController's registered authorized_signer MUST be configured.
+   *   Callers should never reach this branch if the application is correctly
+   *   configured; the guard exists as a last line of defence against accidental
+   *   mis-configuration.
+   *
+   * @param params - sweep parameters including destination and optional nonce
+   * @returns 64-byte Ed25519 signature Buffer
+   * @throws Error when NODE_ENV=production and SWEEP_SIGNING_KEY_SEED is not a
+   *         valid 32-byte (64-char hex) seed
+   */
   public generateAuthSignature(params: AuthorizeSweepParams): Buffer {
+    const env = process.env.NODE_ENV ?? 'development';
+    const isProduction = env === 'production';
+
     const signingKeySeed = this.configService.getOrThrow<string>(
       'stellar.sweepSigningKeySeed',
     );
     const sweepControllerContractId = this.configService.getOrThrow<string>(
       'stellar.contracts.sweepController',
     );
+
+    // Guard: in production the signing key seed must be a real 32-byte Ed25519
+    // seed (64 hex chars).  Reject anything that looks like a placeholder so a
+    // mis-configured deployment fails fast rather than sending unauthorised sweeps.
+    if (isProduction) {
+      const seedBytes = Buffer.from(signingKeySeed, 'hex');
+      if (seedBytes.length !== 32) {
+        throw new Error(
+          'generateAuthSignature: SWEEP_SIGNING_KEY_SEED must be a valid ' +
+            '32-byte Ed25519 seed (64 hex chars) in production. ' +
+            `Got ${seedBytes.length} bytes.`,
+        );
+      }
+    }
 
     // Fetch the current nonce from the SweepController contract before signing.
     // The nonce must match what the contract will read during verification.

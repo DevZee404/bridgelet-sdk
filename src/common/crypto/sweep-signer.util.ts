@@ -46,9 +46,21 @@ export class SweepSignerUtil {
       );
     }
 
-    // Node.js crypto supports Ed25519 via createPrivateKey with type 'ed25519'
+    // Node.js crypto requires a PKCS#8 DER-encoded key for Ed25519.
+    // A raw 32-byte seed must be wrapped with the standard PKCS#8 + OneAsymmetricKey
+    // header for id-EdDSA (OID 1.3.101.112).
+    // ASN.1 structure:
+    //   SEQUENCE {
+    //     INTEGER 0           (version)
+    //     SEQUENCE { OID 1.3.101.112 }
+    //     OCTET STRING { OCTET STRING { <32-byte seed> } }
+    //   }
+    // Hex prefix: 302e020100300506032b657004220420  (16 bytes)
+    const pkcs8Prefix = Buffer.from('302e020100300506032b657004220420', 'hex');
+    const pkcs8Der = Buffer.concat([pkcs8Prefix, seed]);
+
     const privateKey = crypto.createPrivateKey({
-      key: seed,
+      key: pkcs8Der,
       format: 'der',
       type: 'pkcs8',
     });
