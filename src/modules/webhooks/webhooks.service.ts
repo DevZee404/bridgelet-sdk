@@ -116,8 +116,26 @@ export class WebhooksService {
     payload: Record<string, unknown>,
     maxRetries = 3,
   ): Promise<void> {
-    const body = JSON.stringify({ event: eventType, ...payload });
+    const delivery = this.deliveryRepository.create({
+      subscriptionId: webhook.id,
+      eventType,
+      payloadHash: '', // Placeholder, will be updated
+      attemptCount: 0,
+      lastResponseCode: null,
+      lastResponseBody: null,
+      deliveredAt: null,
+    });
+    await this.deliveryRepository.save(delivery);
+
+    const body = JSON.stringify({
+      id: delivery.id,
+      event: eventType,
+      ...payload,
+    });
     const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
+    delivery.payloadHash = payloadHash;
+    await this.deliveryRepository.save(delivery);
+
     const signature = this.computeSignature(body, webhook.secret);
 
     const rawAccountId = payload['accountId'];
@@ -141,6 +159,7 @@ export class WebhooksService {
             'Content-Type': 'application/json',
             'X-Bridgelet-Signature': `sha256=${signature}`,
             'X-Bridgelet-Event': eventType,
+            'X-Bridgelet-Delivery-Id': delivery.id,
           },
           body,
           signal: controller.signal,
@@ -177,15 +196,10 @@ export class WebhooksService {
 
     // Record delivery attempt log in DB
     try {
-      const delivery = this.deliveryRepository.create({
-        subscriptionId: webhook.id,
-        eventType,
-        payloadHash,
-        attemptCount,
-        lastResponseCode,
-        lastResponseBody,
-        deliveredAt: success ? new Date() : null,
-      });
+      delivery.attemptCount = attemptCount;
+      delivery.lastResponseCode = lastResponseCode;
+      delivery.lastResponseBody = lastResponseBody;
+      delivery.deliveredAt = success ? new Date() : null;
       await this.deliveryRepository.save(delivery);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

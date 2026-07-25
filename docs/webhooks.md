@@ -19,10 +19,15 @@ Payloads are signed using HMAC-SHA256. Every outgoing webhook request includes t
 ```http
 X-Bridgelet-Signature: sha256=<hex_digest>
 X-Bridgelet-Event: <event_type>
+X-Bridgelet-Delivery-Id: <delivery_uuid>
 Content-Type: application/json
 ```
 
 To verify the signature on your receiving server, compute the HMAC-SHA256 of the raw request body using your configured webhook secret key and compare it against the `X-Bridgelet-Signature` header.
+
+## Idempotency
+
+The `X-Bridgelet-Delivery-Id` header contains a unique UUID for each webhook delivery. If a webhook is retried, the delivery ID will remain the same. Subscribers can use this header to deduplicate events and ensure that they are only processed once.
 
 ## Retry Policy & Delivery Logs
 
