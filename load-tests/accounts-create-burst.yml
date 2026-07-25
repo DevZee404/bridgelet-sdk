@@ -1,0 +1,27 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 1
+      arrivalCount: 50
+  payload:
+    path: './accounts-api-keys.csv'
+    fields:
+      - apiKey
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+scenarios:
+  - name: Create 50 accounts in a single burst
+    flow:
+      - post:
+          url: '/accounts'
+          headers:
+            X-API-Key: '{{ apiKey }}'
+          json:
+            fundingSource: 'GBMOCKFUNDINGACCOUNTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+            recovery_address: 'GBMOCKRECOVERYACCOUNTXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+            amount: '100'
+            asset_code: 'native'
+            expiresIn: 3600
+            metadata:
+              loadTest: true

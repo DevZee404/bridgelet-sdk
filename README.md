@@ -180,6 +180,43 @@ npm run test:cov
 
 Coverage reports are generated in the `coverage/` directory. The build will fail if any metric (branches, functions, lines, statements) falls below 80%.
 
+### Load Testing
+
+Generate API keys for the concurrent account load test:
+
+```bash
+npm run load:accounts:seed -- 50
+```
+
+Then run the burst test against a locally running server:
+
+```bash
+npm run load:accounts
+```
+
+This test sends 50 concurrent `POST /accounts` requests using unique integrator API keys and verifies the endpoint remains responsive under burst load.
+
+### Local sandbox integration
+
+The repository includes a local sandbox integration test for the Bridgelet contract flow in `test/accounts-local-sandbox.e2e-spec.ts`.
+
+Set the required Stellar environment variables and run:
+
+```bash
+npm run test:local-sandbox
+```
+
+Required env vars:
+
+- `STELLAR_HORIZON_URL`
+- `STELLAR_SOROBAN_RPC_URL`
+- `EPHEMERAL_ACCOUNT_CONTRACT_ID`
+- `SWEEP_CONTROLLER_CONTRACT_ID`
+- `FUNDING_ACCOUNT_SECRET`
+- `RECOVERY_ACCOUNT_PUBLIC`
+- `SWEEP_SIGNING_KEY_SEED`
+- `STELLAR_LOCAL_SANDBOX=true`
+
 The repository also includes an embedded-Postgres integration test in `src/database/migrations.integration.spec.ts` that starts a fresh PostgreSQL instance, runs all current migrations, verifies the resulting schema matches the TypeORM entities, checks the `account_status_enum` values, confirms the `claims.accountId -> accounts.id` and `webhook_deliveries.subscription_id -> webhooks.id` foreign keys are enforced, verifies the high-traffic `accounts` indexes added by migration `1718100006000`, and verifies the `contract_events` table shape.
 
 To check coverage for a specific file:
@@ -201,7 +238,7 @@ DATABASE_PASSWORD=postgres
 # Stellar
 STELLAR_NETWORK=testnet
 STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
-SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+STELLAR_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
 
 # Security
 JWT_SECRET=your-secret-key
