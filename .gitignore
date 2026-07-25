@@ -57,6 +57,9 @@ pids
 *.seed
 *.pid.lock
 
+# Load test artifacts
+/load-tests/accounts-api-keys.csv
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 

@@ -20,6 +20,9 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:local-sandbox": "jest --config ./test/jest-e2e.json test/accounts-local-sandbox.e2e-spec.ts",
+    "load:accounts": "npx artillery run load-tests/accounts-create-burst.yml",
+    "load:accounts:seed": "ts-node --esm scripts/seed-load-test-integrators.ts",
     "typeorm": "typeorm-ts-node-esm",
     "migration:generate": "npm run typeorm -- migration:generate",
     "migration:create": "npm run typeorm -- migration:create",
@@ -90,7 +93,8 @@
     "tsc-esm-fix": "^3.1.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "artillery": "^2.0.0"
   },
   "jest": {
     "moduleFileExtensions": [
