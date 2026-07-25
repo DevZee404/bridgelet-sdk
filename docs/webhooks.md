@@ -19,10 +19,31 @@ Payloads are signed using HMAC-SHA256. Every outgoing webhook request includes t
 ```http
 X-Bridgelet-Signature: sha256=<hex_digest>
 X-Bridgelet-Event: <event_type>
+X-Bridgelet-Delivery-Id: <delivery_uuid>
 Content-Type: application/json
 ```
 
 To verify the signature on your receiving server, compute the HMAC-SHA256 of the raw request body using your configured webhook secret key and compare it against the `X-Bridgelet-Signature` header.
+
+## Idempotency
+
+The `X-Bridgelet-Delivery-Id` header contains a unique UUID for each webhook delivery. If a webhook is retried, the delivery ID will remain the same. Subscribers can use this header to deduplicate events and ensure that they are only processed once.
+
+## Pagination
+
+The `GET /webhooks` and `GET /webhooks/:id/deliveries` endpoints support cursor-based pagination. Use the `limit` and `cursor` query parameters to paginate through the results.
+
+- `limit`: The maximum number of results to return. Defaults to 25.
+- `cursor`: The cursor to start from. This should be the `createdAt` timestamp of the last item in the previous response.
+
+## Delivery Logs
+
+The `GET /webhooks/:id/deliveries` endpoint allows you to list the delivery history for a specific webhook. In addition to pagination, you can also filter the results by the following query parameters:
+
+- `eventType`: Filter by a specific event type.
+- `success`: Filter by successful or failed deliveries.
+- `fromDate`: Filter by a start date.
+- `toDate`: Filter by an end date.
 
 ## Retry Policy & Delivery Logs
 

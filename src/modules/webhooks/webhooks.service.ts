@@ -1,12 +1,19 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import {
+  FindManyOptions,
+  LessThan,
+  MoreThan,
+  Repository,
+  IsNull,
+} from 'typeorm';
 import * as crypto from 'crypto';
 import { Webhook } from './entities/webhook.entity.js';
 import { WebhookDelivery } from './entities/webhook-delivery.entity.js';
 import { CreateWebhookDto } from './dto/create-webhook.dto.js';
 import { UpdateWebhookDto } from './dto/update-webhook.dto.js';
 import { WebhookResponseDto } from './dto/webhook-response.dto.js';
+import { WebhookDeliveriesResponseDto } from './dto/webhook-deliveries-response.dto.js';
 
 @Injectable()
 export class WebhooksService {
@@ -31,11 +38,83 @@ export class WebhooksService {
     return this.toResponseDto(saved);
   }
 
-  async findAll(): Promise<WebhookResponseDto[]> {
-    const webhooks = await this.webhookRepository.find({
+  async findAll(pagination: {
+    limit?: number;
+    cursor?: string;
+  }): Promise<WebhookResponseDto[]> {
+    const { limit = 25, cursor } = pagination;
+    const query: FindManyOptions<Webhook> = {
       where: { isActive: true },
-    });
+      take: limit,
+      order: { createdAt: 'DESC' },
+    };
+
+    if (cursor) {
+      query.where = { ...query.where, createdAt: LessThan(new Date(cursor)) };
+    }
+
+    const webhooks = await this.webhookRepository.find(query);
     return webhooks.map((w) => this.toResponseDto(w));
+  }
+
+  async getDeliveries(
+    id: string,
+    pagination: {
+      limit?: number;
+      cursor?: string;
+      eventType?: string;
+      success?: boolean;
+      fromDate?: Date;
+      toDate?: Date;
+    },
+  ): Promise<WebhookDeliveriesResponseDto> {
+    const {
+      limit = 25,
+      cursor,
+      eventType,
+      success,
+      fromDate,
+      toDate,
+    } = pagination;
+    const query: FindManyOptions<WebhookDelivery> = {
+      where: { subscriptionId: id },
+      take: limit,
+      order: { createdAt: 'DESC' },
+    };
+
+    if (cursor) {
+      query.where = { ...query.where, createdAt: LessThan(new Date(cursor)) };
+    }
+
+    if (eventType) {
+      query.where = { ...query.where, eventType };
+    }
+
+    if (success !== undefined) {
+      query.where = {
+        ...query.where,
+        deliveredAt: success ? MoreThan(new Date(0)) : IsNull(),
+      };
+    }
+
+    if (fromDate) {
+      query.where = { ...query.where, createdAt: MoreThan(fromDate) };
+    }
+
+    if (toDate) {
+      query.where = { ...query.where, createdAt: LessThan(toDate) };
+    }
+
+    const deliveries = await this.deliveryRepository.find(query);
+    const nextCursor =
+      deliveries.length > 0
+        ? deliveries[deliveries.length - 1].createdAt.toISOString()
+        : null;
+
+    return {
+      data: deliveries,
+      cursor: nextCursor,
+    };
   }
 
   async update(id: string, dto: UpdateWebhookDto): Promise<WebhookResponseDto> {
@@ -116,8 +195,26 @@ export class WebhooksService {
     payload: Record<string, unknown>,
     maxRetries = 3,
   ): Promise<void> {
-    const body = JSON.stringify({ event: eventType, ...payload });
+    const delivery = this.deliveryRepository.create({
+      subscriptionId: webhook.id,
+      eventType,
+      payloadHash: '', // Placeholder, will be updated
+      attemptCount: 0,
+      lastResponseCode: null,
+      lastResponseBody: null,
+      deliveredAt: null,
+    });
+    await this.deliveryRepository.save(delivery);
+
+    const body = JSON.stringify({
+      id: delivery.id,
+      event: eventType,
+      ...payload,
+    });
     const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
+    delivery.payloadHash = payloadHash;
+    await this.deliveryRepository.save(delivery);
+
     const signature = this.computeSignature(body, webhook.secret);
 
     const rawAccountId = payload['accountId'];
@@ -141,6 +238,7 @@ export class WebhooksService {
             'Content-Type': 'application/json',
             'X-Bridgelet-Signature': `sha256=${signature}`,
             'X-Bridgelet-Event': eventType,
+            'X-Bridgelet-Delivery-Id': delivery.id,
           },
           body,
           signal: controller.signal,
@@ -177,15 +275,10 @@ export class WebhooksService {
 
     // Record delivery attempt log in DB
     try {
-      const delivery = this.deliveryRepository.create({
-        subscriptionId: webhook.id,
-        eventType,
-        payloadHash,
-        attemptCount,
-        lastResponseCode,
-        lastResponseBody,
-        deliveredAt: success ? new Date() : null,
-      });
+      delivery.attemptCount = attemptCount;
+      delivery.lastResponseCode = lastResponseCode;
+      delivery.lastResponseBody = lastResponseBody;
+      delivery.deliveredAt = success ? new Date() : null;
       await this.deliveryRepository.save(delivery);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

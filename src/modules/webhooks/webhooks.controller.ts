@@ -7,6 +7,7 @@ import {
   Param,
   Body,
   UseGuards,
+  Query,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -14,6 +15,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
@@ -21,6 +23,7 @@ import { WebhooksService } from './webhooks.service.js';
 import { CreateWebhookDto } from './dto/create-webhook.dto.js';
 import { UpdateWebhookDto } from './dto/update-webhook.dto.js';
 import { WebhookResponseDto } from './dto/webhook-response.dto.js';
+import { WebhookDeliveriesResponseDto } from './dto/webhook-deliveries-response.dto.js';
 
 @ApiTags('webhooks')
 @ApiBearerAuth()
@@ -49,12 +52,50 @@ export class WebhooksController {
   @ApiOperation({ summary: 'List registered webhook endpoints' })
   @ApiResponse({
     status: 200,
-    description: 'Active webhooks',
+    description: 'A paginated list of active webhooks',
     type: [WebhookResponseDto],
   })
   @ApiResponse({ status: 401, description: 'Authentication required' })
-  public async findAll(): Promise<WebhookResponseDto[]> {
-    return this.webhooksService.findAll();
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'cursor', required: false, type: String })
+  public async findAll(
+    @Query('limit') limit?: number,
+    @Query('cursor') cursor?: string,
+  ): Promise<WebhookResponseDto[]> {
+    return this.webhooksService.findAll({ limit, cursor });
+  }
+
+  @Get(':id/deliveries')
+  @ApiOperation({ summary: 'List webhook delivery history' })
+  @ApiResponse({
+    status: 200,
+    description: 'A paginated list of webhook deliveries',
+    type: WebhookDeliveriesResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'cursor', required: false, type: String })
+  @ApiQuery({ name: 'eventType', required: false, type: String })
+  @ApiQuery({ name: 'success', required: false, type: Boolean })
+  @ApiQuery({ name: 'fromDate', required: false, type: Date })
+  @ApiQuery({ name: 'toDate', required: false, type: Date })
+  public async getDeliveries(
+    @Param('id') id: string,
+    @Query('limit') limit?: number,
+    @Query('cursor') cursor?: string,
+    @Query('eventType') eventType?: string,
+    @Query('success') success?: boolean,
+    @Query('fromDate') fromDate?: Date,
+    @Query('toDate') toDate?: Date,
+  ): Promise<WebhookDeliveriesResponseDto> {
+    return this.webhooksService.getDeliveries(id, {
+      limit,
+      cursor,
+      eventType,
+      success,
+      fromDate,
+      toDate,
+    });
   }
 
   @Put(':id')

@@ -5,7 +5,7 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
-  PrimaryGeneratedColumn,
+  PrimaryColumn,
 } from 'typeorm';
 import { Webhook } from './webhook.entity.js';
 
@@ -15,7 +15,7 @@ import { Webhook } from './webhook.entity.js';
   'createdAt',
 ])
 export class WebhookDelivery {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryColumn('uuid')
   id: string;
 
   @Column({ name: 'subscription_id', type: 'uuid' })
