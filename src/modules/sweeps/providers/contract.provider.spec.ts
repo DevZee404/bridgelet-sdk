@@ -16,6 +16,9 @@ import {
 import { ContractProvider } from './contract.provider.js';
 import { ContractAuthResult } from '../interfaces/contract-auth-result.interface.js';
 import { AuthorizeSweepParams } from '../interfaces/authorize-sweep-params.interface.js';
+import { SweepSignerUtil } from '../../../common/crypto/sweep-signer.util.js';
+
+// Note: testing mocks are defined inline in this spec to avoid module resolution issues
 
 // Mock the Stellar SDK
 const mockServer = {
@@ -39,6 +42,12 @@ const mockTransactionBuilder = {
 const mockAddress = {
   toScVal: jest.fn<xdr.ScVal, []>(),
 };
+
+jest.mock('../../../common/crypto/sweep-signer.util.js', () => ({
+  SweepSignerUtil: {
+    sign: jest.fn(() => Buffer.alloc(64)), // 64-byte dummy signature
+  },
+}));
 
 jest.mock('@stellar/stellar-sdk', () => {
   const actual = jest.requireActual<typeof import('@stellar/stellar-sdk')>(
@@ -107,6 +116,10 @@ describe('ContractProvider', () => {
       'CDUMMYCONTRACTID123456789ABCDEFGHIJKLMNOPQRSTUV',
     'stellar.sorobanRpcUrl': 'https://soroban-testnet.stellar.org',
     'stellar.network': 'testnet',
+    'stellar.sweepSigningKeySeed':
+      'SDUMMYSEEDFORTESTING1234567890ABCDEFGHIJKLMNOPQRSTUV',
+    'stellar.contracts.sweepController':
+      'CDUMMYSWEEPCONTROLLER123456789ABCDEFGHIJKLMNOP',
   };
 
   beforeEach(async () => {
@@ -123,7 +136,7 @@ describe('ContractProvider', () => {
       accountId: jest.fn(() => validParams.ephemeralPublicKey),
       sequenceNumber: jest.fn(() => '1'),
       incrementSequenceNumber: jest.fn(),
-    } as unknown as Account;
+    };
 
     mockOperation = {
       type: 'invokeHostFunction',
@@ -867,43 +880,50 @@ describe('ContractProvider', () => {
       expect(signatures[0].toString('hex')).toBe(signatures[1].toString('hex'));
     });
 
-    it('should generate different signatures for different ephemeral keys', async () => {
-      const signatures: Buffer[] = [];
-      jest.spyOn(xdr.ScVal, 'scvBytes').mockImplementation((buffer: Buffer) => {
-        signatures.push(Buffer.from(buffer));
-        return {} as xdr.ScVal;
-      });
+    it('should generate different signatures for different nonces', async () => {
+      (SweepSignerUtil.sign as jest.Mock)
+        .mockReturnValueOnce(Buffer.alloc(64, 1))
+        .mockReturnValueOnce(Buffer.alloc(64, 2));
 
-      await provider.authorizeSweep(validParams);
-      await provider.authorizeSweep({
-        ...validParams,
-        ephemeralPublicKey:
-          'GBBM6BKZPEHWYO3E3YKRETPKQ5MRNWSKA722GHBMZABXD4F2J2RROMSE',
-      });
+      await provider.authorizeSweep({ ...validParams, nonce: 0n });
+      await provider.authorizeSweep({ ...validParams, nonce: 1n });
 
-      expect(signatures).toHaveLength(2);
-      expect(signatures[0].toString('hex')).not.toBe(
-        signatures[1].toString('hex'),
+      expect(SweepSignerUtil.sign).toHaveBeenNthCalledWith(
+        1,
+        validParams.destinationAddress,
+        0n,
+        expect.any(String),
+        expect.any(String),
+      );
+      expect(SweepSignerUtil.sign).toHaveBeenNthCalledWith(
+        2,
+        validParams.destinationAddress,
+        1n,
+        expect.any(String),
+        expect.any(String),
       );
     });
 
-    it('should generate different signatures for different destination addresses', async () => {
-      const signatures: Buffer[] = [];
-      jest.spyOn(xdr.ScVal, 'scvBytes').mockImplementation((buffer: Buffer) => {
-        signatures.push(Buffer.from(buffer));
-        return {} as xdr.ScVal;
-      });
-
+    it('should pass different destination addresses to SweepSignerUtil', async () => {
       await provider.authorizeSweep(validParams);
       await provider.authorizeSweep({
         ...validParams,
-        destinationAddress:
-          'GD5J6HLF5666X4AZLTFTXLY2CQZBS2LBJBIMYV3SYGQ5OAQY5QO4XRNX',
+        destinationAddress: 'GD5J...XRNX',
       });
 
-      expect(signatures).toHaveLength(2);
-      expect(signatures[0].toString('hex')).not.toBe(
-        signatures[1].toString('hex'),
+      expect(SweepSignerUtil.sign).toHaveBeenNthCalledWith(
+        1,
+        validParams.destinationAddress,
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(SweepSignerUtil.sign).toHaveBeenNthCalledWith(
+        2,
+        'GD5J...XRNX',
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
       );
     });
 
@@ -914,120 +934,6 @@ describe('ContractProvider', () => {
 
       // Verify that xdr.ScVal.scvBytes was called with a Buffer (the signature)
       expect(xdr.ScVal.scvBytes).toHaveBeenCalledWith(expect.any(Buffer));
-    });
-
-    /**
-     * CRYPTOGRAPHIC VALIDITY TESTS
-     * These tests verify the signature meets cryptographic requirements
-     */
-    it('should generate signature using Stellar SDK hash function', async () => {
-      const signatures: Buffer[] = [];
-      jest.spyOn(xdr.ScVal, 'scvBytes').mockImplementation((buffer: Buffer) => {
-        signatures.push(Buffer.from(buffer));
-        return {} as xdr.ScVal;
-      });
-
-      await provider.authorizeSweep(validParams);
-
-      // Verify signature was generated
-      expect(signatures).toHaveLength(1);
-      const signature = signatures[0];
-
-      // Manually compute expected hash using same logic as implementation
-      const message = `${validParams.ephemeralPublicKey}:${validParams.destinationAddress}`;
-      const expectedHash = hash(Buffer.from(message));
-
-      // First 32 bytes should match the hash output
-      expect(signature.subarray(0, 32).toString('hex')).toBe(
-        expectedHash.toString('hex'),
-      );
-    });
-
-    it('should produce signature that can be verified against known message format', async () => {
-      const signatures: Buffer[] = [];
-      jest.spyOn(xdr.ScVal, 'scvBytes').mockImplementation((buffer: Buffer) => {
-        signatures.push(Buffer.from(buffer));
-        return {} as xdr.ScVal;
-      });
-
-      await provider.authorizeSweep(validParams);
-      const signature = signatures[0];
-
-      // Contract would verify by:
-      // 1. Reconstructing message from parameters
-      // 2. Hashing the message
-      // 3. Comparing first 32 bytes of signature to hash
-      const reconstructedMessage = `${validParams.ephemeralPublicKey}:${validParams.destinationAddress}`;
-      const reconstructedHash = hash(Buffer.from(reconstructedMessage));
-
-      // Simulate contract-side verification
-      const signatureHashPortion = signature.subarray(0, 32);
-      const isValid = signatureHashPortion.equals(reconstructedHash);
-
-      expect(isValid).toBe(true);
-    });
-
-    /**
-     * TEST VECTORS - Known input/output pairs for signature validation
-     * These provide reference values for contract implementation verification
-     */
-    it('should match test vector for known ephemeral and destination pair', async () => {
-      const testVector = {
-        ephemeralPublicKey:
-          'GBBM6BKZPEHWYO3E3YKRETPKQ5MRNWSKA722GHBMZABXD4F2J2RROMSG',
-        destinationAddress:
-          'GD5J6HLF5666X4AZLTFTXLY2CQZBS2LBJBIMYV3SYGQ5OAQY5QO4XRNM',
-        // Pre-computed expected hash (first 32 bytes of signature)
-        expectedMessageFormat:
-          'GBBM6BKZPEHWYO3E3YKRETPKQ5MRNWSKA722GHBMZABXD4F2J2RROMSG:GD5J6HLF5666X4AZLTFTXLY2CQZBS2LBJBIMYV3SYGQ5OAQY5QO4XRNM',
-      };
-
-      const signatures: Buffer[] = [];
-      jest.spyOn(xdr.ScVal, 'scvBytes').mockImplementation((buffer: Buffer) => {
-        signatures.push(Buffer.from(buffer));
-        return {} as xdr.ScVal;
-      });
-
-      await provider.authorizeSweep({
-        ephemeralPublicKey: testVector.ephemeralPublicKey,
-        destinationAddress: testVector.destinationAddress,
-      });
-
-      const signature = signatures[0];
-      const expectedHash = hash(Buffer.from(testVector.expectedMessageFormat));
-
-      // Verify signature matches expected hash
-      expect(signature.subarray(0, 32).toString('hex')).toBe(
-        expectedHash.toString('hex'),
-      );
-      // Verify padding bytes are zero (remaining 32 bytes)
-      expect(signature.subarray(32, 64).every((byte) => byte === 0)).toBe(true);
-    });
-
-    it('should generate signature with correct structure for contract validation', async () => {
-      const signatures: Buffer[] = [];
-      jest.spyOn(xdr.ScVal, 'scvBytes').mockImplementation((buffer: Buffer) => {
-        signatures.push(Buffer.from(buffer));
-        return {} as xdr.ScVal;
-      });
-
-      await provider.authorizeSweep(validParams);
-      const signature = signatures[0];
-
-      // Signature structure for contract:
-      // [0-31]:  SHA-256 hash of message (32 bytes)
-      // [32-63]: Padding zeros (32 bytes) - reserved for future Ed25519 signature
-      const hashPortion = signature.subarray(0, 32);
-      const paddingPortion = signature.subarray(32, 64);
-
-      // Hash portion should be non-zero (actual hash)
-      expect(hashPortion.some((byte) => byte !== 0)).toBe(true);
-
-      // Padding should be all zeros in MVP
-      expect(paddingPortion.every((byte) => byte === 0)).toBe(true);
-
-      // Total length must be 64 bytes (Ed25519 signature size)
-      expect(signature.length).toBe(64);
     });
 
     it('should produce collision-resistant signatures (different inputs never produce same output)', () => {
@@ -1246,7 +1152,7 @@ describe('ContractProvider', () => {
 
       (Contract as jest.Mock).mockImplementationOnce(() => {
         callOrder.push('Contract');
-        return mockContract as unknown as Contract;
+        return mockContract;
       });
 
       mockRpcServer.getAccount.mockImplementationOnce(() => {
@@ -1256,7 +1162,7 @@ describe('ContractProvider', () => {
 
       (Address.fromString as jest.Mock).mockImplementationOnce(() => {
         callOrder.push('Address.fromString');
-        return mockAddress as unknown as ReturnType<typeof Address.fromString>;
+        return mockAddress;
       });
 
       (TransactionBuilder as unknown as jest.Mock).mockImplementationOnce(

@@ -2,9 +2,18 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
-import { LogSanitizer } from '../../common/utils/log-sanitizer.util.js';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Histogram } from 'prom-client';
 
 export const EXPIRY_BUFFER_LEDGERS = 10;
+
+/**
+ * How long (in milliseconds) the cached ledger sequence is considered fresh.
+ * Stellar closes a new ledger approximately every 5 seconds, so we cache for
+ * the same duration to avoid redundant Horizon calls without risking a stale
+ * sequence number that is more than one ledger behind.
+ */
+export const LEDGER_CACHE_TTL_MS = 5_000;
 
 @Injectable()
 export class StellarService {
@@ -13,7 +22,14 @@ export class StellarService {
   private sorobanServer: SorobanRpc.Server;
   private network: string;
 
-  constructor(private configService: ConfigService) {
+  /** Cached ledger sequence and the timestamp it was fetched at (ms). */
+  private ledgerCache: { sequence: number; fetchedAt: number } | null = null;
+
+  constructor(
+    private configService: ConfigService,
+    @InjectMetric('soroban_rpc_latency_seconds')
+    private readonly sorobanRpcLatency: Histogram<string>,
+  ) {
     const horizonUrl =
       this.configService.getOrThrow<string>('stellar.horizonUrl');
     const sorobanRpcUrl = this.configService.getOrThrow<string>(
@@ -33,8 +49,25 @@ export class StellarService {
    *
    * Stellar closes a ledger approximately every 5 seconds.
    * Conversion: expiry_ledger = current_ledger + Math.ceil(expiresInSeconds / 5)
+   *
+   * The result is cached for {@link LEDGER_CACHE_TTL_MS} (5 s) to reduce
+   * unnecessary Horizon round-trips when multiple accounts are created in quick
+   * succession.  Callers that need a guaranteed fresh value can call
+   * {@link invalidateLedgerCache} before invoking this method.
    */
   async getCurrentLedger(): Promise<number> {
+    const now = Date.now();
+
+    if (
+      this.ledgerCache !== null &&
+      now - this.ledgerCache.fetchedAt < LEDGER_CACHE_TTL_MS
+    ) {
+      this.logger.debug(
+        `Current ledger sequence (cached): ${this.ledgerCache.sequence}`,
+      );
+      return this.ledgerCache.sequence;
+    }
+
     const ledgerPage = await this.server
       .ledgers()
       .order('desc')
@@ -42,8 +75,20 @@ export class StellarService {
       .call();
 
     const sequence = ledgerPage.records[0].sequence;
+    this.ledgerCache = { sequence, fetchedAt: now };
     this.logger.debug(`Current ledger sequence: ${sequence}`);
     return sequence;
+  }
+
+  /**
+   * Clears the cached ledger sequence, forcing the next call to
+   * {@link getCurrentLedger} to fetch a fresh value from Horizon.
+   *
+   * Useful in tests and in contexts where a stale ledger could cause problems
+   * (e.g. when the process has been sleeping for more than 5 s).
+   */
+  invalidateLedgerCache(): void {
+    this.ledgerCache = null;
   }
 
   /**
@@ -81,10 +126,11 @@ export class StellarService {
     publicKey: string;
     amount: string;
     asset: string;
-    expiresIn: number; // seconds — was expiresAt: Date, now used for ledger conversion
-    recoveryAddress: string; // maps to fundingSource from CreateAccountDto
-    contractId: string; // deployed EphemeralAccount contract address
-    fundingKeypairSecret?: string; // optional override for testing
+    expiresIn: number;
+    recoveryAddress: string;
+    contractId: string;
+    sweepControllerContractId: string;
+    fundingKeypairSecret?: string;
   }): Promise<string> {
     this.logger.log(
       `Creating ephemeral account: ${LogSanitizer.redactAddress(params.publicKey)}`,
@@ -135,6 +181,10 @@ export class StellarService {
           StellarSdk.Address.fromString(fundingKeypair.publicKey()).toScVal(), // creator
           StellarSdk.xdr.ScVal.scvU32(expiryLedger), // expiry_ledger
           StellarSdk.Address.fromString(params.recoveryAddress).toScVal(), // recovery_address
+          StellarSdk.Address.fromString(
+            params.sweepControllerContractId,
+          ).toScVal(), // authorized_controller
+          StellarSdk.Address.fromString(fundingKeypair.publicKey()).toScVal(),
         ),
       )
       .setTimeout(30)
@@ -144,7 +194,13 @@ export class StellarService {
       await this.sorobanServer.prepareTransaction(initTransaction);
     preparedTx.sign(fundingKeypair);
 
-    const initResult = await this.sorobanServer.sendTransaction(preparedTx);
+    const endTimer = this.sorobanRpcLatency.startTimer();
+    let initResult: SorobanRpc.Api.SendTransactionResponse;
+    try {
+      initResult = await this.sorobanServer.sendTransaction(preparedTx);
+    } finally {
+      endTimer();
+    }
 
     if (initResult.status === 'ERROR') {
       this.logger.error(
@@ -214,7 +270,13 @@ export class StellarService {
     const preparedTx = await this.sorobanServer.prepareTransaction(transaction);
     preparedTx.sign(signerKeypair);
 
-    const result = await this.sorobanServer.sendTransaction(preparedTx);
+    const endTimer = this.sorobanRpcLatency.startTimer();
+    let result: SorobanRpc.Api.SendTransactionResponse;
+    try {
+      result = await this.sorobanServer.sendTransaction(preparedTx);
+    } finally {
+      endTimer();
+    }
 
     if (result.status === 'ERROR') {
       this.logger.error(
@@ -281,7 +343,13 @@ export class StellarService {
     const preparedTx = await this.sorobanServer.prepareTransaction(transaction);
     preparedTx.sign(signerKeypair);
 
-    const result = await this.sorobanServer.sendTransaction(preparedTx);
+    const endTimer = this.sorobanRpcLatency.startTimer();
+    let result: SorobanRpc.Api.SendTransactionResponse;
+    try {
+      result = await this.sorobanServer.sendTransaction(preparedTx);
+    } finally {
+      endTimer();
+    }
 
     if (result.status === 'ERROR') {
       const errStr = JSON.stringify(result.errorResult);
@@ -350,7 +418,13 @@ export class StellarService {
     const preparedTx = await this.sorobanServer.prepareTransaction(transaction);
     preparedTx.sign(signerKeypair);
 
-    const result = await this.sorobanServer.sendTransaction(preparedTx);
+    const endTimer = this.sorobanRpcLatency.startTimer();
+    let result: SorobanRpc.Api.SendTransactionResponse;
+    try {
+      result = await this.sorobanServer.sendTransaction(preparedTx);
+    } finally {
+      endTimer();
+    }
 
     if (result.status === 'ERROR') {
       const errStr = JSON.stringify(result.errorResult);
@@ -390,7 +464,13 @@ export class StellarService {
       .setTimeout(30)
       .build();
 
-    const simResult = await this.sorobanServer.simulateTransaction(transaction);
+    const endTimer = this.sorobanRpcLatency.startTimer();
+    let simResult: SorobanRpc.Api.SimulateTransactionResponse;
+    try {
+      simResult = await this.sorobanServer.simulateTransaction(transaction);
+    } finally {
+      endTimer();
+    }
 
     if (SorobanRpc.Api.isSimulationError(simResult)) {
       throw new Error(`get_info simulation failed: ${simResult.error}`);
@@ -440,7 +520,13 @@ export class StellarService {
     maxAttempts = 10,
   ): Promise<void> {
     for (let i = 0; i < maxAttempts; i++) {
-      const status = await this.sorobanServer.getTransaction(txHash);
+      const endTimer = this.sorobanRpcLatency.startTimer();
+      let status: SorobanRpc.Api.GetTransactionResponse;
+      try {
+        status = await this.sorobanServer.getTransaction(txHash);
+      } finally {
+        endTimer();
+      }
 
       if (status.status === SorobanRpc.Api.GetTransactionStatus.SUCCESS) return;
       if (status.status === SorobanRpc.Api.GetTransactionStatus.FAILED) {

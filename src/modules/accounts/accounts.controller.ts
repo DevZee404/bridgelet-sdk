@@ -11,24 +11,27 @@ import {
   ApiTags,
   ApiOperation,
   ApiResponse,
-  ApiBearerAuth,
+  ApiSecurity,
   ApiQuery,
+  ApiBody,
 } from '@nestjs/swagger';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { AccountsService } from './accounts.service.js';
 import { CreateAccountDto } from './dto/create-account.dto.js';
 import { AccountResponseDto } from './dto/account-response.dto.js';
 import { AccountsListResponseDto } from './dto/accounts-list-response.dto.js';
 import { AccountStatus } from './enums/account-status.enum.js';
+import { ApiKeyAuthGuard } from '../../common/guards/api-key-auth.guard.js';
 
 @ApiTags('accounts')
-@ApiBearerAuth()
+@ApiSecurity('X-API-Key')
 @Controller('accounts')
-@UseGuards(ThrottlerGuard)
+@UseGuards(ThrottlerGuard, ApiKeyAuthGuard)
 export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 
   @Post()
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests/min per API key
   @ApiOperation({
     summary: 'Create ephemeral escrow account',
     description:
@@ -49,6 +52,7 @@ export class AccountsController {
     description:
       'Rate limit exceeded — requests are throttled to protect funding flows',
   })
+  @ApiBody({ type: CreateAccountDto })
   public async create(
     @Body() createAccountDto: CreateAccountDto,
   ): Promise<AccountResponseDto> {

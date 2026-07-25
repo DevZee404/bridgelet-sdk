@@ -11,23 +11,33 @@ import {
 import { Account } from '../../accounts/entities/account.entity.js';
 
 @Entity('claims')
-// @Index(['accountId'])
 export class Claim {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ type: 'uuid' })
-  @Index()
+  @Index('IDX_claims_accountId')
   accountId: string;
 
   @ManyToOne(() => Account, { eager: false, onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'accountId' })
+  @JoinColumn({
+    name: 'accountId',
+    referencedColumnName: 'id',
+    foreignKeyConstraintName: 'FK_claims_accountId',
+  })
   account: Account;
 
   @Column({ type: 'varchar', length: 56 })
   destinationAddress: string;
 
-  @Column({ type: 'varchar', length: 64 })
+  @Column({
+    type: 'varchar',
+    length: 64,
+    comment:
+      'Stellar transaction hash of the sweep. ' +
+      'Always a 64-character hex string — never a placeholder value. ' +
+      'Enforced by TransactionHashValidator before record creation.',
+  })
   sweepTxHash: string;
 
   @Column({ type: 'varchar', length: 100 })

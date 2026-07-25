@@ -4,8 +4,8 @@ import {
   Logger,
   ConflictException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import * as crypto from 'crypto';
 import { Claim } from '../entities/claim.entity.js';
 import { Account } from '../../accounts/entities/account.entity.js';
@@ -14,8 +14,12 @@ import { SweepsService } from '../../sweeps/sweeps.service.js';
 import { TokenVerificationProvider } from './token-verification.provider.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
 import { SecretEncryptionUtil } from '../../../common/crypto/secret-encryption.util.js';
+import { KmsKeyProvider } from '../../../common/crypto/kms-key.provider.js';
 import { ConfigService } from '@nestjs/config';
-import { LogSanitizer } from '../../../common/utils/log-sanitizer.util.js';
+import { TransactionHashValidator } from '../../../common/validators/transaction-hash.validator.js';
+import { StellarAddressValidator } from '../../../common/validators/stellar-address.validator.js';
+import { WebhooksService } from '../../webhooks/webhooks.service.js';
+import { ClaimAuditProvider } from './claim-audit.provider.js';
 
 @Injectable()
 export class ClaimRedemptionProvider {
@@ -26,29 +30,31 @@ export class ClaimRedemptionProvider {
     private claimsRepository: Repository<Claim>,
     @InjectRepository(Account)
     private accountsRepository: Repository<Account>,
+    @InjectDataSource()
+    private dataSource: DataSource,
     private tokenVerificationProvider: TokenVerificationProvider,
     private sweepsService: SweepsService,
     private configService: ConfigService,
-    // TEMPORARY: WebhooksService not yet implemented - commented out to allow dev server to start
-    // private webhooksService: WebhooksService,
+    private webhooksService: WebhooksService,
+    private claimAuditProvider: ClaimAuditProvider,
+    private kmsKeyProvider: KmsKeyProvider,
   ) {}
 
   async redeemClaim(
     token: string,
     destinationAddress: string,
+    ip?: string | null,
   ): Promise<ClaimRedemptionResponseDto> {
     this.logger.log(
       `Redeeming claim for destination: ${LogSanitizer.redactAddress(destinationAddress)}`,
     );
 
-    // Verify token first
-    // In claim-redemption.provider.ts redeemClaim method:
     const tokenHash = this.hashToken(token);
+
     try {
       await this.tokenVerificationProvider.verifyClaimToken(token);
     } catch (error) {
       if (error instanceof ConflictException) {
-        // Account already claimed - return existing claim
         const claimedAccount = await this.accountsRepository.findOne({
           where: { claimTokenHash: tokenHash },
         });
@@ -72,33 +78,61 @@ export class ClaimRedemptionProvider {
       throw error;
     }
 
-    // Validate destination address
-    this.validateStellarAddress(destinationAddress);
+    StellarAddressValidator.assertValid(destinationAddress);
 
-    // Get account
-    const account = await this.accountsRepository.findOne({
-      where: { claimTokenHash: tokenHash },
-    });
+    // Atomically acquire the claim slot using SELECT FOR UPDATE.
+    // This prevents concurrent requests from both passing the status check.
+    const { locked: account, wasPartialOnEntry } =
+      await this.dataSource.transaction(async (manager: EntityManager) => {
+        const locked = await manager
+          .createQueryBuilder(Account, 'account')
+          .setLock('pessimistic_write')
+          .where('account.claimTokenHash = :tokenHash', { tokenHash })
+          .andWhere('account.deletedAt IS NULL')
+          .getOne();
 
-    if (!account) {
-      throw new BadRequestException('Invalid or expired claim token');
-    }
+        if (!locked) {
+          throw new BadRequestException('Invalid or expired claim token');
+        }
 
-    // Double-check not already claimed (race condition protection)
+        if (locked.status === AccountStatus.CLAIMED) {
+          return { locked, wasPartialOnEntry: false };
+        }
+
+        if (locked.status === AccountStatus.CLAIMING) {
+          throw new ConflictException('Claim is already being processed');
+        }
+
+        // Allow PENDING_CLAIM (fresh attempt) and PARTIAL_SWEEP (retry of a
+        // contract-was-Swept-but-payment-failed prior attempt). Any other
+        // status is rejected.
+        if (
+          locked.status !== AccountStatus.PENDING_CLAIM &&
+          locked.status !== AccountStatus.PARTIAL_SWEEP
+        ) {
+          throw new BadRequestException(
+            `Account cannot be redeemed. Status: ${locked.status}`,
+          );
+        }
+
+        const wasPartial = locked.status === AccountStatus.PARTIAL_SWEEP;
+        locked.status = AccountStatus.CLAIMING;
+        locked.destinationAddress = destinationAddress;
+        await manager.save(locked);
+        return { locked, wasPartialOnEntry: wasPartial };
+      });
+
+    // Idempotent response for already-claimed account
     if (account.status === AccountStatus.CLAIMED) {
       this.logger.log(`Claim already redeemed for account: ${account.id}`);
-
-      // Return existing claim details
       const existingClaim = await this.claimsRepository.findOne({
         where: { accountId: account.id },
       });
-
       if (!existingClaim) {
         throw new BadRequestException(
           'Claim record not found for already redeemed account',
         );
       }
-
       return {
         success: true,
         txHash: existingClaim.sweepTxHash,
@@ -110,51 +144,102 @@ export class ClaimRedemptionProvider {
       };
     }
 
-    // Update account status to prevent concurrent claims
-    account.status = AccountStatus.CLAIMED;
-    account.destinationAddress = destinationAddress;
-    account.claimedAt = new Date();
-    await this.accountsRepository.save(account);
-
     try {
-      // Execute sweep via SweepsService
       const sweepResult = await this.sweepsService.executeSweep({
         accountId: account.id,
         ephemeralPublicKey: account.publicKey,
         ephemeralSecret: SecretEncryptionUtil.decrypt(
           account.secretKeyEncrypted,
-          this.configService.getOrThrow<string>('app.encryptionKey'),
+          this.kmsKeyProvider.getEncryptionKey(),
         ),
-
         destinationAddress,
         amount: account.amount,
         asset: account.asset,
+        // PARTIAL_SWEEP retry: contract is already in Swept state from the
+        // prior partial failure, so re-invoking execute_sweep would revert.
+        // Skip steps 2-3 and only re-submit the Horizon payment.
+        skipContractAuth: wasPartialOnEntry,
       });
 
-      // Create claim record
-      const claim = this.claimsRepository.create({
-        accountId: account.id,
-        destinationAddress,
-        sweepTxHash: sweepResult.txHash,
-        amountSwept: account.amount,
-        asset: account.asset,
-        claimedAt: new Date(),
-      });
+      // PARTIAL SWEEP path: contract authorized but Horizon payment failed.
+      // Mark the account so a future redemption attempt can retry the payment
+      // (with skipContractAuth=true). Surface this as a non-error response
+      // (status=200, success=false, isPartial=true) so callers can decide.
+      if (sweepResult.isPartial) {
+        await this.accountsRepository.update(account.id, {
+          status: AccountStatus.PARTIAL_SWEEP,
+          destinationAddress: '',
+        });
 
-      await this.claimsRepository.save(claim);
+        await this.claimAuditProvider.record({
+          accountId: account.id,
+          destination: destinationAddress,
+          ip,
+          outcome: 'partial',
+          failureReason: sweepResult.error ?? 'unknown',
+        });
+
+        await this.webhooksService.triggerEvent('sweep.partial', {
+          accountId: account.id,
+          amount: account.amount,
+          asset: account.asset,
+          destination: destinationAddress,
+          error: sweepResult.error,
+          contractAuthHash: sweepResult.contractAuthHash,
+        });
+
+        return {
+          success: false,
+          isPartial: true,
+          contractAuthHash: sweepResult.contractAuthHash,
+          amountSwept: account.amount,
+          asset: account.asset,
+          destination: destinationAddress,
+          error: sweepResult.error,
+          message:
+            'Sweep partially completed: contract authorized but Horizon payment failed. Retry with the same token.',
+        };
+      }
+
+      TransactionHashValidator.assertValid(sweepResult.txHash as string);
+
+      // Atomically record the claim and mark account as CLAIMED
+      const claim = await this.dataSource.transaction(
+        async (manager: EntityManager) => {
+          account.status = AccountStatus.CLAIMED;
+          account.claimedAt = new Date();
+          await manager.save(account);
+
+          const newClaim = manager.create(Claim, {
+            accountId: account.id,
+            destinationAddress,
+            sweepTxHash: sweepResult.txHash as string,
+            amountSwept: account.amount,
+            asset: account.asset,
+            claimedAt: account.claimedAt,
+          });
+          return manager.save(newClaim);
+        },
+      );
 
       this.logger.log(`Claim redeemed successfully: ${claim.id}`);
 
-      // TEMPORARY: WebhooksService not yet implemented - webhook trigger commented out
-      // await this.webhooksService.triggerEvent('sweep.completed', {
-      //   accountId: account.id,
-      //   amount: account.amount,
-      //   asset: account.asset,
-      //   destination: destinationAddress,
-      //   txHash: sweepResult.txHash,
-      //   sweptAt: claim.claimedAt,
-      //   metadata: account.metadata,
-      // });
+      await this.claimAuditProvider.record({
+        accountId: account.id,
+        destination: destinationAddress,
+        ip,
+        outcome: 'success',
+      });
+
+      await this.webhooksService.triggerEvent('sweep.completed', {
+        accountId: account.id,
+        amount: account.amount,
+        asset: account.asset,
+        destination: destinationAddress,
+        txHash: sweepResult.txHash,
+        sweptAt: claim.claimedAt,
+        metadata: account.metadata,
+      });
 
       return {
         success: true,
@@ -165,11 +250,18 @@ export class ClaimRedemptionProvider {
         sweptAt: claim.claimedAt,
       };
     } catch (error) {
-      // Revert account status on failure
-      account.status = AccountStatus.PENDING_CLAIM;
-      account.destinationAddress = '';
-      account.claimedAt = null;
-      await this.accountsRepository.save(account);
+      // Revert from CLAIMING. On a retry that began in PARTIAL_SWEEP we
+      // preserve the contract-is-Swept invariant by leaving the account
+      // in PARTIAL_SWEEP — the contract is already authorized, so
+      // settling-back to PENDING_CLAIM would invalidate that. Otherwise
+      // revert to PENDING_CLAIM so the user can retry.
+      const revertStatus = wasPartialOnEntry
+        ? AccountStatus.PARTIAL_SWEEP
+        : AccountStatus.PENDING_CLAIM;
+      await this.accountsRepository.update(account.id, {
+        status: revertStatus,
+        destinationAddress: '',
+      });
 
       const typedError = error as Error;
       this.logger.error(
@@ -177,24 +269,24 @@ export class ClaimRedemptionProvider {
         typedError.stack,
       );
 
-      // TEMPORARY: WebhooksService not yet implemented - webhook trigger commented out
-      // await this.webhooksService.triggerEvent('sweep.failed', {
-      //   accountId: account.id,
-      //   amount: account.amount,
-      //   asset: account.asset,
-      //   destination: destinationAddress,
-      //   error: error.message,
-      //   timestamp: new Date(),
-      // });
+      await this.claimAuditProvider.record({
+        accountId: account.id,
+        destination: destinationAddress,
+        ip,
+        outcome: 'failure',
+        failureReason: typedError.message,
+      });
+
+      await this.webhooksService.triggerEvent('sweep.failed', {
+        accountId: account.id,
+        amount: account.amount,
+        asset: account.asset,
+        destination: destinationAddress,
+        error: typedError.message,
+        timestamp: new Date(),
+      });
 
       throw error;
-    }
-  }
-
-  private validateStellarAddress(address: string): void {
-    // Stellar public keys start with 'G' and are 56 characters
-    if (!address.startsWith('G') || address.length !== 56) {
-      throw new BadRequestException('Invalid Stellar address format');
     }
   }
 

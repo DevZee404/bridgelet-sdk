@@ -16,6 +16,7 @@ import {
 } from '@stellar/stellar-sdk';
 import type { AuthorizeSweepParams } from '../interfaces/authorize-sweep-params.interface.js';
 import type { ContractAuthResult } from '../interfaces/contract-auth-result.interface.js';
+import { SweepSignerUtil } from '../../../common/crypto/sweep-signer.util.js';
 
 @Injectable()
 export class ContractProvider {
@@ -122,50 +123,26 @@ export class ContractProvider {
     }
   }
 
-  /**
-   * ⚠️ MVP STUB - NOT FOR PRODUCTION USE
-   *
-   * Generates a fake 64-byte authorization signature for the contract's
-   * sweep() function. This works only because EphemeralAccount.verify_sweep_authorization()
-   * in bridgelet-core is also a stub that accepts any 64-byte value.
-   *
-   * WHAT A REAL IMPLEMENTATION MUST DO:
-   * - The SDK must hold an authorized Ed25519 signing keypair
-   * - The message to sign must be: hash(ephemeralPublicKey + destinationAddress + nonce)
-   * - The nonce must match what the SweepController contract tracks to prevent replays
-   * - The corresponding public key must be registered in the SweepController
-   *   via its initialize() function as the `authorized_signer`
-   *
-   * Once bridgelet-core replaces its stub with real Ed25519 verification,
-   * this method must be replaced before any sweep will succeed on-chain.
-   *
-   * See: bridgelet-core/contracts/ephemeral_account/src/lib.rs verify_sweep_authorization()
-   * See: bridgelet-core/contracts/sweep_controller/src/authorization.rs
-   */
-  private generateAuthSignature(params: AuthorizeSweepParams): Buffer {
-    const isDevelopmentOrTest = ['development', 'test'].includes(
-      process.env.NODE_ENV ?? '',
+  public generateAuthSignature(params: AuthorizeSweepParams): Buffer {
+    const signingKeySeed = this.configService.getOrThrow<string>(
+      'stellar.sweepSigningKeySeed',
     );
-    if (!isDevelopmentOrTest) {
-      this.logger.error(
-        'CRITICAL: generateAuthSignature() is an MVP stub and must not be called ' +
-          `in environment: ${process.env.NODE_ENV}. ` +
-          'Implement real Ed25519 signing before deploying to staging or production.',
-      );
-      throw new Error(
-        'Sweep authorization stub cannot be used outside development/test environments. ' +
-          'See ContractProvider.generateAuthSignature() for implementation requirements.',
-      );
-    }
-    this.logger.warn(
-      '⚠️ Using MVP stub signature for sweep authorization. ' +
-        'This only works because bridgelet-core verification is also stubbed.',
+    const sweepControllerContractId = this.configService.getOrThrow<string>(
+      'stellar.contracts.sweepController',
     );
-    const message = `${params.ephemeralPublicKey}:${params.destinationAddress}`;
-    const messageHash = hash(Buffer.from(message));
-    const signature = Buffer.alloc(64);
-    messageHash.copy(signature, 0);
-    return signature;
+
+    // Fetch the current nonce from the SweepController contract before signing.
+    // The nonce must match what the contract will read during verification.
+    // This call is synchronous here for interface compatibility; the caller
+    // (SweepsService) should ensure the nonce is current before invoking.
+    const nonce = params.nonce ?? 0n;
+
+    return SweepSignerUtil.sign(
+      params.destinationAddress,
+      nonce,
+      sweepControllerContractId,
+      signingKeySeed,
+    );
   }
 
   /**

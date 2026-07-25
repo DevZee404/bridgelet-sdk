@@ -1,0 +1,132 @@
+/**
+ * Tests for the network config startup guard introduced in main.ts (Issue #212).
+ *
+ * The guard prevents accidental production deployment with a testnet Stellar
+ * config.  We test the core assertion logic directly by reproducing it here
+ * and verifying that process.exit() is called (or not) under each combination
+ * of NODE_ENV and STELLAR_NETWORK.
+ *
+ * Testing strategy:
+ * - We stub process.exit so the test process itself doesn't terminate.
+ * - We inline the guard function so the test does not require importing the
+ *   full NestJS application (which needs a running database, decorators, etc.).
+ */
+
+/**
+ * Inline reproduction of the assertNetworkConfig() function from main.ts.
+ * Must be kept in sync with the implementation.
+ */
+function assertNetworkConfig(): void {
+  const nodeEnv = process.env.NODE_ENV;
+  const stellarNetwork = process.env.STELLAR_NETWORK;
+
+  if (nodeEnv === 'production' && stellarNetwork === 'testnet') {
+    console.error(
+      '[Bootstrap] FATAL: NODE_ENV=production with STELLAR_NETWORK=testnet is not allowed. ' +
+        'Set STELLAR_NETWORK=mainnet for production deployments.',
+    );
+    process.exit(1);
+  }
+}
+
+describe('assertNetworkConfig (network startup guard)', () => {
+  let exitSpy: jest.SpyInstance;
+  let consoleErrorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    exitSpy = jest
+      .spyOn(process, 'exit')
+      .mockImplementation((() => undefined) as never);
+
+    consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    exitSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+    delete process.env.NODE_ENV;
+    delete process.env.STELLAR_NETWORK;
+  });
+
+  it('calls process.exit(1) when NODE_ENV=production and STELLAR_NETWORK=testnet', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.STELLAR_NETWORK = 'testnet';
+
+    assertNetworkConfig();
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('logs a descriptive FATAL message before exiting', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.STELLAR_NETWORK = 'testnet';
+
+    assertNetworkConfig();
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('FATAL'),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('NODE_ENV=production'),
+    );
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('STELLAR_NETWORK=testnet'),
+    );
+  });
+
+  it('does NOT call process.exit when NODE_ENV=production and STELLAR_NETWORK=mainnet', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.STELLAR_NETWORK = 'mainnet';
+
+    assertNetworkConfig();
+
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call process.exit when NODE_ENV=development and STELLAR_NETWORK=testnet', () => {
+    process.env.NODE_ENV = 'development';
+    process.env.STELLAR_NETWORK = 'testnet';
+
+    assertNetworkConfig();
+
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call process.exit when NODE_ENV is not set and STELLAR_NETWORK=testnet', () => {
+    delete process.env.NODE_ENV;
+    process.env.STELLAR_NETWORK = 'testnet';
+
+    assertNetworkConfig();
+
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call process.exit when NODE_ENV=test and STELLAR_NETWORK=testnet', () => {
+    process.env.NODE_ENV = 'test';
+    process.env.STELLAR_NETWORK = 'testnet';
+
+    assertNetworkConfig();
+
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call process.exit when neither env var is set', () => {
+    delete process.env.NODE_ENV;
+    delete process.env.STELLAR_NETWORK;
+
+    assertNetworkConfig();
+
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call process.exit when NODE_ENV=production and STELLAR_NETWORK is not set', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.STELLAR_NETWORK;
+
+    assertNetworkConfig();
+
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+});
