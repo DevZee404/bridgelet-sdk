@@ -6,6 +6,13 @@ import { ClaimsController } from './claims.controller.js';
 import { ClaimsService } from './claims.service.js';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
+import { JwtKeyRotationProvider } from '../../common/crypto/jwt-key-rotation.provider.js';
+
+const mockJwtKeyRotation = {
+  sign: jest.fn().mockReturnValue('mock-jwt-token'),
+  verify: jest.fn().mockReturnValue({ publicKey: 'test', type: 'claim', iat: 0, exp: 9999999999 }),
+  getJwks: jest.fn().mockReturnValue({ keys: [] }),
+};
 
 describe('ClaimsController', () => {
   let app: INestApplication;
@@ -24,6 +31,10 @@ describe('ClaimsController', () => {
         {
           provide: ClaimsService,
           useValue: mockClaimsService,
+        },
+        {
+          provide: JwtKeyRotationProvider,
+          useValue: mockJwtKeyRotation,
         },
       ],
     })

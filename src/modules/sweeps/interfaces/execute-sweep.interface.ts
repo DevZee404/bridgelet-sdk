@@ -14,4 +14,11 @@ export interface SweepExecutionRequest {
    * `execute_sweep` would revert on-chain.
    */
   skipContractAuth?: boolean;
+  /**
+   * When true, the sweeper queries all non-zero balances on the ephemeral
+   * account and sweeps each one to the destination in a batch. The `amount`
+   * and `asset` fields are still used for the primary asset; additional
+   * assets are discovered from Horizon.
+   */
+  sweepAllAssets?: boolean;
 }

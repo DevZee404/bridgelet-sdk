@@ -387,4 +387,46 @@ export class TransactionProvider {
       throw error;
     }
   }
+
+  /**
+   * Query all non-zero balances for an ephemeral account.
+   * Returns an array of { asset, amount } pairs for every balance > 0.
+   * Used by multi-asset sweep (Issue #223) to discover additional assets
+   * beyond the primary one specified in the sweep request.
+   */
+  public async getAllAccountBalances(
+    publicKey: string,
+  ): Promise<Array<{ asset: string; amount: string }>> {
+    try {
+      const account = await this.server.loadAccount(publicKey);
+      const balances: Array<{ asset: string; amount: string }> = [];
+
+      for (const b of account.balances) {
+        if (Number(b.balance) <= 0) continue;
+
+        if (b.asset_type === 'native') {
+          balances.push({ asset: 'native', amount: b.balance });
+        } else if (
+          'asset_code' in b &&
+          'asset_issuer' in b
+        ) {
+          balances.push({
+            asset: `${b.asset_code}:${b.asset_issuer}`,
+            amount: b.balance,
+          });
+        }
+      }
+
+      this.logger.log(
+        `Found ${balances.length} non-zero balance(s) on ${publicKey}`,
+      );
+      return balances;
+    } catch (error) {
+      const typedError = error as HorizonErrorResponse;
+      this.logger.error(
+        `Failed to get all account balances: ${typedError.message}`,
+      );
+      throw error;
+    }
+  }
 }
