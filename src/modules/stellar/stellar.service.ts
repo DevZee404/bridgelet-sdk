@@ -95,6 +95,17 @@ export class StellarService {
    * succession.  Callers that need a guaranteed fresh value can call
    * {@link invalidateLedgerCache} before invoking this method.
    */
+  async getSorobanLatestLedger(): Promise<{
+    sequence: number;
+    hash: string;
+  }> {
+    const info = await this.sorobanServer.getLatestLedger();
+    return {
+      sequence: info.sequence,
+      hash: info.hash,
+    };
+  }
+
   async getCurrentLedger(): Promise<number> {
     const now = Date.now();
 

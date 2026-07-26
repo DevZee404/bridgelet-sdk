@@ -51,6 +51,8 @@ const mockMergeResult = {
 // Tests
 // ---------------------------------------------------------------------------
 
+import { EventEmitter2 } from '@nestjs/event-emitter';
+
 describe('SweepsService', () => {
   let service: SweepsService;
   type SweepStatusResult = Awaited<
@@ -142,6 +144,11 @@ describe('SweepsService', () => {
         {
           provide: getToken('sweep_failure_total'),
           useValue: { inc: jest.fn() },
+        },
+        {
+          provide: EventEmitter2,
+
+          useValue: mockEventEmitter,
         },
       ],
     }).compile();
@@ -445,6 +452,11 @@ describe('SweepsService', () => {
         validRequest.accountId,
         'Horizon timeout',
       );
+
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith('sweep.failed', {
+        error: 'Validation failed',
+        retryCount: 0,
+      });
     });
 
     it('enqueues retry when outer catch fires (validation/contract error)', async () => {
@@ -471,6 +483,22 @@ describe('SweepsService', () => {
         validRequest.accountId,
         'ALREADY_SWEPT',
       );
+
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith('sweep.failed', {
+        error: 'Contract failed',
+        retryCount: 0,
+      });
+    });
+
+    it('should simulate sweep without submitting in dry-run mode', async () => {
+      const dryRunDto = { ...validDto, dryRun: true };
+      const result = await service.executeSweep(dryRunDto);
+
+      expect(result.txHash).toBe('dry-run');
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith('sweep.completed', {
+        txHash: 'dry-run',
+        amounts: dryRunDto.amount,
+      });
     });
   });
 

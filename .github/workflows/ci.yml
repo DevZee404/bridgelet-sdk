@@ -33,8 +33,8 @@ jobs:
       - name: Linting
         run: npm run lint
 
-      - name: Unit Tests
-        run: npm run test
+      - name: Unit Tests with Coverage
+        run: npm run test:cov
 
       - name: Build Verification
         run: npm run build

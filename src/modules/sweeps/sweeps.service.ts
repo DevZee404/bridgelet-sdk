@@ -63,8 +63,9 @@ export class SweepsService {
   public async executeSweep(
     sweepExecutionRequest: SweepExecutionRequest,
   ): Promise<SweepResult> {
+    const { dryRun = false } = sweepExecutionRequest;
     this.logger.log(
-      `Executing sweep for account: ${sweepExecutionRequest.accountId}`,
+      `Executing sweep for account: ${sweepExecutionRequest.accountId}${dryRun ? ' (dry-run)' : ''}`,
     );
 
     try {
