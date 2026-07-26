@@ -25,7 +25,9 @@ describe('TransactionHashValidator', () => {
     });
 
     it('returns false for null without throwing', () => {
-      expect(TransactionHashValidator.isValid(null as any)).toBe(false);
+      expect(TransactionHashValidator.isValid(null as unknown as string)).toBe(
+        false,
+      );
     });
 
     it('accepts uppercase hex', () => {

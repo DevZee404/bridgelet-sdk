@@ -264,6 +264,7 @@ describe('SorobanEventsIndexerService', () => {
     it('fetches events via Soroban RPC getEvents()', async () => {
       const getEventsSpy = jest
         .spyOn(service['sorobanServer'], 'getEvents')
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         .mockResolvedValueOnce({ events: [{ id: 'rpc-event-1' }] } as any);
 
       const result = await service.fetchEventsFromRpc(500);

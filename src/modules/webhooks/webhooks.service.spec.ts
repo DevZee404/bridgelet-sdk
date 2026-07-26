@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { Logger } from '@nestjs/common';
 import { WebhookEvent } from './webhook-events.enum.js';
 import { WebhooksService } from './webhooks.service.js';
 import { Webhook } from './entities/webhook.entity.js';

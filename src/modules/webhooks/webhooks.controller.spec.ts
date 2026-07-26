@@ -1,3 +1,4 @@
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { Test, TestingModule } from '@nestjs/testing';
 import { WebhooksController } from './webhooks.controller.js';
 import { WebhooksService } from './webhooks.service.js';

@@ -11,6 +11,7 @@
  *   const dto      = makeWebhookResponse({ isActive: false });
  */
 
+import { WebhookResponseDto } from '../../modules/webhooks/dto/webhook-response.dto.js';
 import { Webhook } from '../../modules/webhooks/entities/webhook.entity.js';
 import { WebhookDelivery } from '../../modules/webhooks/entities/webhook-delivery.entity.js';
 import { WebhookEvent } from '../../modules/webhooks/webhook-events.enum.js';

@@ -147,7 +147,7 @@ describe('makeAccount', () => {
   });
 
   it('override can nullify claimTokenHash (nullable column)', () => {
-    const account = makeAccount({ claimTokenHash: null as unknown as string });
+    const account = makeAccount({ claimTokenHash: null });
     expect(account.claimTokenHash).toBeNull();
   });
 });
@@ -172,7 +172,7 @@ describe('makeAccountResponse', () => {
   });
 
   it('txHash is present and 64 chars by default', () => {
-    const { txHash } = makeAccountResponse();
+    const { txHash } = makeAccountResponse({});
     expect(txHash).toBeDefined();
     expect(txHash!.length).toBe(64);
   });
@@ -189,8 +189,8 @@ describe('makeAccountResponse', () => {
   });
 
   it('each call returns a distinct object', () => {
-    const d1 = makeAccountResponse();
-    const d2 = makeAccountResponse();
+    const d1 = makeAccountResponse({});
+    const d2 = makeAccountResponse({});
     expect(d1).not.toBe(d2);
   });
 });
@@ -481,7 +481,7 @@ describe('makeWebhookDelivery', () => {
 
 describe('makeWebhookResponse', () => {
   it('returns a complete WebhookResponseDto with all required fields', () => {
-    const dto = makeWebhookResponse();
+    const dto = makeWebhookResponse({});
 
     expect(dto.id).toBe(DEFAULT_WEBHOOK_ID);
     expect(dto.url).toBe(DEFAULT_WEBHOOK_URL);
@@ -493,7 +493,7 @@ describe('makeWebhookResponse', () => {
   });
 
   it('does not contain a secret field (security invariant)', () => {
-    const dto = makeWebhookResponse();
+    const dto = makeWebhookResponse({});
     expect(dto).not.toHaveProperty('secret');
   });
 
@@ -511,8 +511,8 @@ describe('makeWebhookResponse', () => {
   });
 
   it('each call returns a distinct object with independent events arrays', () => {
-    const d1 = makeWebhookResponse();
-    const d2 = makeWebhookResponse();
+    const d1 = makeWebhookResponse({});
+    const d2 = makeWebhookResponse({});
 
     expect(d1).not.toBe(d2);
     d1.events.push('sweep.failed');

@@ -31,8 +31,12 @@ describe('StellarAddressValidator', () => {
     });
 
     it('should return false for undefined or null inputs', () => {
-      expect(StellarAddressValidator.isValid(undefined as any)).toBe(false);
-      expect(StellarAddressValidator.isValid(null as any)).toBe(false);
+      expect(
+        StellarAddressValidator.isValid(undefined as unknown as string),
+      ).toBe(false);
+      expect(StellarAddressValidator.isValid(null as unknown as string)).toBe(
+        false,
+      );
     });
   });
 

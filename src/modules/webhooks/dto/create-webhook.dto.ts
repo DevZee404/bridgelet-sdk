@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { IsUrl, IsArray, IsString, IsOptional } from 'class-validator';
 import { WebhookEvent } from '../webhook-events.enum.js';
 
