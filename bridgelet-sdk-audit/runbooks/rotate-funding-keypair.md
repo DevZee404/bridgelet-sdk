@@ -37,6 +37,7 @@ Update `FUNDING_ACCOUNT_SECRET` (or `stellar.fundingSecret` in the NestJS config
 ### 2. Restart the SDK Service
 
 Perform a **graceful restart** (SIGTERM → SIGKILL after drain timeout) to ensure:
+
 - In-flight account creation requests complete before shutdown.
 - The payment monitor SSE streams are re-established.
 - The new funding keypair is loaded into `StellarService`.
@@ -67,6 +68,7 @@ curl -X POST https://{api-host}/accounts \
 ```
 
 Verify:
+
 - The Horizon `CreateAccount` transaction was signed by the **new** public key.
 - The account status transitions to `PENDING_PAYMENT`.
 

@@ -22,11 +22,11 @@ FROM accounts
 WHERE "publicKey" = '{publicKey}' OR id = '{accountId}';
 ```
 
-| Status | Meaning |
-|---|---|
-| `INITIALIZING` | DB record created, but neither Horizon nor Soroban completed. Timeout job will mark it `FAILED`. |
+| Status            | Meaning                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `INITIALIZING`    | DB record created, but neither Horizon nor Soroban completed. Timeout job will mark it `FAILED`.          |
 | `PENDING_PAYMENT` | Horizon `CreateAccount` succeeded **and** Soroban `initialize()` succeeded. Account is fully operational. |
-| `FAILED` | One of the two steps failed. Check `metadata.failureReason`. |
+| `FAILED`          | One of the two steps failed. Check `metadata.failureReason`.                                              |
 
 ## Step 2 — Check if the Stellar Account Exists
 
@@ -82,6 +82,7 @@ Accounts stuck here beyond the timeout indicate the cleanup scheduler is also no
 If the Horizon account was created (Step 2 returns 200) but the contract was never initialized (Step 4), you have an **unrestricted funded account** on-chain. This is the non-atomicity issue documented as internal Issue #15.
 
 **Remediation options:**
+
 1. **Wait for expiry**: If `expiresAt` is set, the expiry scheduler will eventually call `expire()`. However, `expire()` requires the contract to be initialized, which it is not in this case.
 2. **Account merge**: Manually merge the account's 2 XLM back to the funding keypair using the ephemeral secret key (if it can be decrypted from `secretKeyEncrypted`). This is a manual intervention.
 3. **Mark as FAILED**: Update the DB status and log the orphaned account for manual on-chain cleanup.
@@ -90,10 +91,10 @@ If the Horizon account was created (Step 2 returns 200) but the contract was nev
 
 ## Resolution Summary
 
-| Root cause | Resolution |
-|---|---|
-| Horizon CreateAccount failed (no on-chain account) | Check funding keypair balance, retry creation |
-| Horizon succeeded, Soroban initialize() failed | Retry initialization or mark FAILED and fund manually |
-| Funding keypair insufficient balance | Top up the funding keypair |
-| INITIALIZING cleanup job not running | Restart scheduler service, accounts will be auto-marked FAILED |
-| Non-atomic orphaned account (Issue #15) | Manual intervention: merge account back to funding keypair |
+| Root cause                                         | Resolution                                                     |
+| -------------------------------------------------- | -------------------------------------------------------------- |
+| Horizon CreateAccount failed (no on-chain account) | Check funding keypair balance, retry creation                  |
+| Horizon succeeded, Soroban initialize() failed     | Retry initialization or mark FAILED and fund manually          |
+| Funding keypair insufficient balance               | Top up the funding keypair                                     |
+| INITIALIZING cleanup job not running               | Restart scheduler service, accounts will be auto-marked FAILED |
+| Non-atomic orphaned account (Issue #15)            | Manual intervention: merge account back to funding keypair     |

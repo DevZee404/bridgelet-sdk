@@ -54,12 +54,12 @@ grep "{publicKey}" /var/log/bridgelet/payment-monitor*.log
 
 Look for these patterns:
 
-| Log message | Meaning |
-|---|---|
-| `DuplicateAsset` | On-chain `record_payment()` was called but the asset was already recorded. This is benign and indicates the payment-monitor detected the payment but the on-chain call succeeded for a *different* asset first. |
-| `TooManyPayments` | The on-chain contract hit its 10-asset limit. The account is likely terminal — check status. |
-| `InvalidAmount` | The payment amount could not be parsed to i128 stroops. The account is terminal. |
-| `PENDING_PAYMENT → PENDING_CLAIM` | The transition succeeded — the account should no longer be `PENDING_PAYMENT`. If it still is, the DB write may have failed. |
+| Log message                       | Meaning                                                                                                                                                                                                         |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DuplicateAsset`                  | On-chain `record_payment()` was called but the asset was already recorded. This is benign and indicates the payment-monitor detected the payment but the on-chain call succeeded for a _different_ asset first. |
+| `TooManyPayments`                 | The on-chain contract hit its 10-asset limit. The account is likely terminal — check status.                                                                                                                    |
+| `InvalidAmount`                   | The payment amount could not be parsed to i128 stroops. The account is terminal.                                                                                                                                |
+| `PENDING_PAYMENT → PENDING_CLAIM` | The transition succeeded — the account should no longer be `PENDING_PAYMENT`. If it still is, the DB write may have failed.                                                                                     |
 
 ## Step 4 — Single-Asset Limitation (Cross-Reference)
 
@@ -93,11 +93,11 @@ If the account is close to expiry, the expiry scheduler may run before the payme
 
 ## Resolution Summary
 
-| Root cause | Resolution |
-|---|---|
-| No payment sent | Ask integrator to resend |
-| Payment sent but wrong asset | Note single-asset limitation; second payment is invisible |
-| Payment monitor down / stalled | Restart the monitor service |
-| DuplicateAsset warnings only | On-chain is fine; check DB connection for the status transition |
+| Root cause                      | Resolution                                                      |
+| ------------------------------- | --------------------------------------------------------------- |
+| No payment sent                 | Ask integrator to resend                                        |
+| Payment sent but wrong asset    | Note single-asset limitation; second payment is invisible       |
+| Payment monitor down / stalled  | Restart the monitor service                                     |
+| DuplicateAsset warnings only    | On-chain is fine; check DB connection for the status transition |
 | InvalidAmount / TooManyPayments | Terminal — status should be `FAILED` or `PENDING_CLAIM` already |
-| Account near expiry | May expire before claim; coordinate with integrator on timing |
+| Account near expiry             | May expire before claim; coordinate with integrator on timing   |
