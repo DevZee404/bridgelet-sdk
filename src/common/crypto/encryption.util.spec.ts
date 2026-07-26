@@ -139,13 +139,15 @@ describe('SecretEncryptionUtil', () => {
     });
 
     it('returns corrupt for empty / non-string inputs', () => {
-      expect(SecretEncryptionUtil.classify('' as any)).toBe('corrupt');
+      expect(SecretEncryptionUtil.classify('')).toBe('corrupt');
 
-      expect(SecretEncryptionUtil.classify(undefined as any)).toBe('corrupt');
+      expect(SecretEncryptionUtil.classify(undefined as string)).toBe(
+        'corrupt',
+      );
 
-      expect(SecretEncryptionUtil.classify(null as any)).toBe('corrupt');
+      expect(SecretEncryptionUtil.classify(null as string)).toBe('corrupt');
 
-      expect(SecretEncryptionUtil.classify(123 as any)).toBe('corrupt');
+      expect(SecretEncryptionUtil.classify(123 as string)).toBe('corrupt');
     });
 
     it('returns corrupt for a v2-prefixed row even if the body is valid', () => {

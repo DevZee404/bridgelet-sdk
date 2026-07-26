@@ -6,14 +6,15 @@
  *   import { makeWebhook, makeWebhookDelivery, makeWebhookResponse } from '../../testing/factories/webhook.factory.js';
  *
  *   const hook     = makeWebhook();
- *   const hook     = makeWebhook({ events: ['sweep.completed'], secret: 'my-secret' });
+ *   const hook     = makeWebhook({ events: [WebhookEvent.SweepCompleted], secret: 'my-secret' });
  *   const delivery = makeWebhookDelivery({ attemptCount: 3, lastResponseCode: 503 });
  *   const dto      = makeWebhookResponse({ isActive: false });
  */
 
+import { WebhookResponseDto } from '../../modules/webhooks/dto/webhook-response.dto.js';
 import { Webhook } from '../../modules/webhooks/entities/webhook.entity.js';
 import { WebhookDelivery } from '../../modules/webhooks/entities/webhook-delivery.entity.js';
-import { WebhookResponseDto } from '../../modules/webhooks/dto/webhook-response.dto.js';
+import { WebhookEvent } from '../../modules/webhooks/webhook-events.enum.js';
 
 // ---------------------------------------------------------------------------
 // Shared constants
@@ -22,7 +23,10 @@ import { WebhookResponseDto } from '../../modules/webhooks/dto/webhook-response.
 export const DEFAULT_WEBHOOK_ID = 'wwwwwwww-xxxx-yyyy-zzzz-000000000001';
 export const DEFAULT_WEBHOOK_URL = 'https://example.com/hook';
 export const DEFAULT_WEBHOOK_SECRET = 'test-secret-key';
-export const DEFAULT_WEBHOOK_EVENTS = ['sweep.completed', 'account.created'];
+export const DEFAULT_WEBHOOK_EVENTS = [
+  WebhookEvent.SweepCompleted,
+  WebhookEvent.AccountCreated,
+];
 
 const BASE_DATE = new Date('2026-01-01T00:00:00.000Z');
 

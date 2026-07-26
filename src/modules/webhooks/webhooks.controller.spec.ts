@@ -1,10 +1,11 @@
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { Test, TestingModule } from '@nestjs/testing';
 import { WebhooksController } from './webhooks.controller.js';
 import { WebhooksService } from './webhooks.service.js';
 import { CreateWebhookDto } from './dto/create-webhook.dto.js';
 import { WebhookResponseDto } from './dto/webhook-response.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { WebhookEvent } from './webhook-events.enum.js';
 import { makeWebhookResponse as webhookResponseFactory } from '../../testing/factories/webhook.factory.js';
 
 const mockWebhooksService = {
@@ -12,6 +13,7 @@ const mockWebhooksService = {
   findAll: jest.fn(),
   update: jest.fn(),
   remove: jest.fn(),
+  test: jest.fn(),
 };
 
 function makeWebhookResponse(overrides = {}): WebhookResponseDto {
@@ -46,7 +48,7 @@ describe('WebhooksController', () => {
     it('delegates to webhooksService.create and returns the webhook', async () => {
       const dto: CreateWebhookDto = {
         url: 'https://api.example.com/hooks',
-        events: ['account.created', 'sweep.completed'],
+        events: [WebhookEvent.AccountCreated, WebhookEvent.SweepCompleted],
         secret: 'my-secret',
       };
       const response = makeWebhookResponse();
@@ -126,6 +128,16 @@ describe('WebhooksController', () => {
       await controller.remove('wh-uuid-1');
 
       expect(mockWebhooksService.remove).toHaveBeenCalledWith('wh-uuid-1');
+    });
+  });
+
+  describe('test', () => {
+    it('delegates to webhooksService.test', async () => {
+      mockWebhooksService.test.mockResolvedValue(undefined);
+
+      await controller.test('wh-uuid-1');
+
+      expect(mockWebhooksService.test).toHaveBeenCalledWith('wh-uuid-1');
     });
   });
 });

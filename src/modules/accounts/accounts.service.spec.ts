@@ -79,7 +79,9 @@ describe('AccountsService', () => {
         AccountLatencyMetricsProvider,
         {
           provide: getToken('account_creation_total'),
-          useValue: { inc: jest.fn() },
+          useValue: {
+            inc: jest.fn(),
+          },
         },
         {
           provide: KmsKeyProvider,
