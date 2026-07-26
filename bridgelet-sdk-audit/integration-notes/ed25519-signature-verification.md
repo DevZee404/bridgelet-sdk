@@ -18,10 +18,10 @@ There are two possible failure modes when a signature is invalid:
 
 If your integration ever sends an invalid Ed25519 signature during the sweep authorization step, the error you receive depends on the failure mode:
 
-| Failure Mode | SDK HTTP Response | SDK Error Code | Your SDK Can Catch? |
-|---|---|---|---|
-| Returned error | 403 | `AUTHORIZATION_FAILED` | Yes |
-| Wasm trap (panic) | 500 | `UNKNOWN_CONTRACT_ERROR` | No — indistinguishable from any other contract error |
+| Failure Mode      | SDK HTTP Response | SDK Error Code           | Your SDK Can Catch?                                  |
+| ----------------- | ----------------- | ------------------------ | ---------------------------------------------------- |
+| Returned error    | 403               | `AUTHORIZATION_FAILED`   | Yes                                                  |
+| Wasm trap (panic) | 500               | `UNKNOWN_CONTRACT_ERROR` | No — indistinguishable from any other contract error |
 
 **Recommendation**: If you see a 500 error with `UNKNOWN_CONTRACT_ERROR` during sweep authorization, check whether your Ed25519 signature or public key is correctly formatted before retrying. The SDK currently has no way to distinguish a signature-panic from other contract failures.
 
