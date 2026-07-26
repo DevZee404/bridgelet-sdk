@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Logger } from '@nestjs/common';
+import { WebhookEvent } from './webhook-events.enum.js';
 import { WebhooksService } from './webhooks.service.js';
 import { Webhook } from './entities/webhook.entity.js';
 import { WebhookDelivery } from './entities/webhook-delivery.entity.js';
@@ -139,7 +139,7 @@ describe('WebhooksService', () => {
       mockWebhookRepository.save.mockResolvedValue({
         ...webhook,
         url: 'https://updated.example.com/hook',
-        events: ['account.created'],
+        events: [WebhookEvent.AccountCreated],
         description: 'Updated webhook',
       });
 
@@ -214,7 +214,7 @@ describe('WebhooksService', () => {
         text: () => Promise.resolve('{"status":"ok"}'),
       } as Response);
 
-      await service.triggerEvent('sweep.completed', {
+      await service.triggerEvent(WebhookEvent.SweepCompleted, {
         accountId: 'acc-123',
         amount: '100',
       });
@@ -226,7 +226,7 @@ describe('WebhooksService', () => {
       expect(mockWebhookDeliveryRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           subscriptionId: webhook.id,
-          eventType: 'sweep.completed',
+          eventType: WebhookEvent.SweepCompleted,
           attemptCount: 1,
           lastResponseCode: 200,
         }),
@@ -251,7 +251,9 @@ describe('WebhooksService', () => {
         { headers: Record<string, string> },
       ];
       expect(init.headers['Content-Type']).toBe('application/json');
-      expect(init.headers['X-Bridgelet-Event']).toBe('account.created');
+      expect(init.headers['X-Bridgelet-Event']).toBe(
+        WebhookEvent.AccountCreated,
+      );
     });
 
     it('does not throw when no webhooks are subscribed to the event', async () => {
@@ -279,7 +281,7 @@ describe('WebhooksService', () => {
       } as Response);
 
       const payload = { accountId: 'acc-sig-test', amount: '50' };
-      await service.triggerEvent('sweep.completed', payload);
+      await service.triggerEvent(WebhookEvent.SweepCompleted, payload);
 
       const [, init] = fetchMock.mock.calls[0] as [
         string,
@@ -307,7 +309,7 @@ describe('WebhooksService', () => {
         text: () => Promise.resolve('Service Unavailable'),
       } as Response);
 
-      await service.triggerEvent('sweep.failed', {
+      await service.triggerEvent(WebhookEvent.SweepFailed, {
         accountId: 'acc-retry-test',
       });
 

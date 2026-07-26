@@ -1,5 +1,5 @@
 import { IsUrl, IsArray, IsString, IsOptional } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { WebhookEvent } from '../webhook-events.enum.js';
 
 export class CreateWebhookDto {
   @ApiProperty({ example: 'https://api.example.com/hooks' })
@@ -8,10 +8,10 @@ export class CreateWebhookDto {
 
   @ApiProperty({
     example: [
-      'sweep.completed',
-      'sweep.failed',
-      'account.created',
-      'account.expired',
+      WebhookEvent.SweepCompleted,
+      WebhookEvent.SweepFailed,
+      WebhookEvent.AccountCreated,
+      WebhookEvent.AccountExpired,
     ],
     description: 'Event types to subscribe to',
   })

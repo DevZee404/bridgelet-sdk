@@ -4,7 +4,7 @@ import { WebhooksService } from './webhooks.service.js';
 import { CreateWebhookDto } from './dto/create-webhook.dto.js';
 import { WebhookResponseDto } from './dto/webhook-response.dto.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { WebhookEvent } from './webhook-events.enum.js';
 import { makeWebhookResponse as webhookResponseFactory } from '../../testing/factories/webhook.factory.js';
 
 const mockWebhooksService = {
@@ -46,7 +46,7 @@ describe('WebhooksController', () => {
     it('delegates to webhooksService.create and returns the webhook', async () => {
       const dto: CreateWebhookDto = {
         url: 'https://api.example.com/hooks',
-        events: ['account.created', 'sweep.completed'],
+        events: [WebhookEvent.AccountCreated, WebhookEvent.SweepCompleted],
         secret: 'my-secret',
       };
       const response = makeWebhookResponse();

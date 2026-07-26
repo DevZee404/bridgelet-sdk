@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { AccountStatus } from './enums/account-status.enum.js';
 import { SecretEncryptionUtil } from '../../common/crypto/secret-encryption.util.js';
 import { KmsKeyProvider } from '../../common/crypto/kms-key.provider.js';
-import { WebhooksService } from '../webhooks/webhooks.service.js';
+import { WebhookEvent } from '../webhooks/webhook-events.enum.js';
 import { sanitizeMetadata } from '../../common/utils/metadata-sanitizer.util.js';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter } from 'prom-client';
@@ -101,7 +101,7 @@ export class AccountsService {
       );
       await this.accountsRepository.save(account);
 
-      await this.webhooksService.triggerEvent('account.created', {
+      await this.webhooksService.triggerEvent(WebhookEvent.AccountCreated, {
         accountId: account.id,
         publicKey: account.publicKey,
         amount: account.amount,

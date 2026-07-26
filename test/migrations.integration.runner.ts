@@ -11,7 +11,7 @@ import { ClaimAuditLog } from '../src/modules/claims/entities/claim-audit-log.en
 import { ContractEvent } from '../src/modules/stellar/entities/contract-event.entity.js';
 import { WebhookDelivery } from '../src/modules/webhooks/entities/webhook-delivery.entity.js';
 import { Webhook } from '../src/modules/webhooks/entities/webhook.entity.js';
-import { Integrator } from '../src/modules/integrators/entities/integrator.entity.js';
+import { WebhookEvent } from '../src/modules/webhooks/webhook-events.enum.js';
 import { CreateAccountsTable1718100000000 } from '../src/database/migrations/1718100000000-CreateAccountsTable.js';
 import { CreateClaimsTable1718100001000 } from '../src/database/migrations/1718100001000-CreateClaimsTable.js';
 import { AddInitializingToAccountStatus1718100002000 } from '../src/database/migrations/1718100002000-AddInitializingToAccountStatus.js';
@@ -213,7 +213,7 @@ async function main(): Promise<void> {
           )
           VALUES ($1, $2, $3)
         `,
-        [randomUUID(), 'account.created', 'b'.repeat(64)],
+        [randomUUID(), WebhookEvent.AccountCreated, 'b'.repeat(64)],
       );
     } catch (error) {
       const pgError = error as PgErrorLike;
