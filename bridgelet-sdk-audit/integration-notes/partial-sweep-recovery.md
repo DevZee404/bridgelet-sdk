@@ -24,6 +24,7 @@ When a sweep fails with `PARTIAL_SWEEP`:
 4. It then executes the Horizon payment directly to the destination address.
 
 The retry parameters are:
+
 - **Base delay**: 2 seconds
 - **Maximum delay**: 5 minutes
 - **Max attempts**: 5
@@ -40,9 +41,9 @@ The retry parameters are:
 
 ## Error Codes You May See
 
-| Horizon Error | Meaning | Resolution |
-|---|---|---|
-| `tx_bad_auth` | Invalid ephemeral secret key | Check SDK key encryption and decryption |
-| `tx_insufficient_balance` | Account lacks XLM for payment | Verify account was properly funded |
-| `tx_too_late` | Transaction expired | Check network congestion; SDK will retry |
-| `tx_bad_seq` | Sequence number conflict | SDK will retry with fresh sequence |
+| Horizon Error             | Meaning                       | Resolution                               |
+| ------------------------- | ----------------------------- | ---------------------------------------- |
+| `tx_bad_auth`             | Invalid ephemeral secret key  | Check SDK key encryption and decryption  |
+| `tx_insufficient_balance` | Account lacks XLM for payment | Verify account was properly funded       |
+| `tx_too_late`             | Transaction expired           | Check network congestion; SDK will retry |
+| `tx_bad_seq`              | Sequence number conflict      | SDK will retry with fresh sequence       |
