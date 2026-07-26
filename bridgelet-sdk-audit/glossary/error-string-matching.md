@@ -16,10 +16,10 @@ The pattern involves the following steps:
 
 The following strings are currently matched on:
 
-*   `AlreadySwept`
-*   `AccountExpired`
-*   `InvalidStatus`
-*   `DuplicateAsset`
+- `AlreadySwept`
+- `AccountExpired`
+- `InvalidStatus`
+- `DuplicateAsset`
 
 ## Brittleness and Risk
 
