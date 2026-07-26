@@ -229,6 +229,10 @@ describe('TransactionProvider', () => {
               };
               return config[key];
             }),
+            get: jest.fn((key: string) => {
+              if (key === 'stellar.horizonFallbackUrl') return undefined;
+              return undefined;
+            }),
           },
         },
       ],
@@ -813,6 +817,7 @@ describe('TransactionProvider', () => {
                 if (key === 'stellar.network') return 'testnet';
                 return '';
               }),
+              get: jest.fn(() => undefined),
             },
           },
         ],

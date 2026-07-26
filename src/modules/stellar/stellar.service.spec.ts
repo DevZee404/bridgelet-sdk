@@ -23,6 +23,10 @@ const mockConfigService = {
     if (value === undefined) throw new Error('Config key not found: ' + key);
     return value;
   },
+  get: (key: string): string | undefined => {
+    if (key === 'stellar.horizonFallbackUrl') return undefined;
+    return undefined;
+  },
 };
 
 // ── Helpers to build mock Horizon / Soroban server objects ────────────────────
@@ -638,6 +642,10 @@ describe('StellarService', () => {
                   'stellar.network': 'mainnet',
                 };
                 return cfg[key];
+              },
+              get: (key: string) => {
+                if (key === 'stellar.horizonFallbackUrl') return undefined;
+                return undefined;
               },
             },
           },

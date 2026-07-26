@@ -43,9 +43,23 @@ async function bootstrap() {
     }),
   );
 
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean);
+
+  if (isProduction && (!corsOrigins || corsOrigins.length === 0)) {
+    const bootstrapLogger = new Logger('Bootstrap');
+    bootstrapLogger.error(
+      'CORS_ORIGINS must be set to a comma-separated list of allowed origins in production. ' +
+        'Refusing to start with wildcard CORS to prevent unauthorized cross-origin access.',
+    );
+    process.exit(1);
+  }
+
   app.enableCors({
-    origin: process.env.CORS_ORIGINS?.split(',') || '*',
-    credentials: true,
+    origin: corsOrigins && corsOrigins.length > 0 ? corsOrigins : false,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-Id'],
+    credentials: corsOrigins && corsOrigins.length > 0,
+    maxAge: 86400,
   });
 
   const config = new DocumentBuilder()

@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { ValidationProvider } from './providers/validation.provider.js';
 import { ContractProvider } from './providers/contract.provider.js';
 import { TransactionProvider } from './providers/transaction.provider.js';
@@ -11,6 +13,9 @@ import { TransactionResult } from './interfaces/transaction-result.interface.js'
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter } from 'prom-client';
 import { SweepMetricsProvider } from './providers/sweep-metrics.provider.js';
+import { Account } from '../accounts/entities/account.entity.js';
+import { Claim } from '../claims/entities/claim.entity.js';
+import type { SweepStatusResponseDto } from './dto/sweep-status-response.dto.js';
 
 @Injectable()
 export class SweepsService {
@@ -23,6 +28,10 @@ export class SweepsService {
     private readonly stellarService: StellarService,
     private readonly configService: ConfigService,
     private readonly retryQueue: SweepRetryQueueService,
+    @InjectRepository(Account)
+    private readonly accountRepository: Repository<Account>,
+    @InjectRepository(Claim)
+    private readonly claimRepository: Repository<Claim>,
     @InjectMetric('sweep_success_total')
     private readonly sweepSuccessCounter: Counter<string>,
     @InjectMetric('sweep_failure_total')
@@ -227,5 +236,57 @@ export class SweepsService {
     reason?: string;
   }> {
     return this.validationProvider.getSweepStatus(accountId);
+  }
+
+  /**
+   * Get detailed sweep status for an account by its UUID.
+   * Returns transaction hash, confirmation status, and error details
+   * suitable for the admin dashboard and sender notifications.
+   */
+  public async getSweepById(accountId: string): Promise<SweepStatusResponseDto> {
+    const account = await this.accountRepository.findOne({
+      where: { id: accountId },
+    });
+
+    if (!account) {
+      throw new NotFoundException(`Account ${accountId} not found`);
+    }
+
+    const claim = await this.claimRepository.findOne({
+      where: { accountId: account.id },
+      order: { createdAt: 'DESC' },
+    });
+
+    const dto: SweepStatusResponseDto = {
+      accountId: account.id,
+      publicKey: account.publicKey,
+      status: account.status,
+      destinationAddress: account.destinationAddress,
+      amount: account.amount,
+      asset: account.asset,
+      createdAt: account.createdAt,
+      expiresAt: account.expiresAt,
+    };
+
+    if (claim) {
+      dto.sweepTxHash = claim.sweepTxHash;
+      dto.sweptAt = claim.claimedAt;
+
+      if (account.status === 'claimed') {
+        dto.confirmationStatus = 'confirmed';
+      } else if (account.status === 'partial_sweep') {
+        dto.confirmationStatus = 'partial';
+        dto.error = 'Contract authorized but Horizon payment failed';
+      } else if (account.status === 'claiming') {
+        dto.confirmationStatus = 'pending';
+      }
+    } else if (account.status === 'failed') {
+      dto.confirmationStatus = 'failed';
+      dto.error = 'Account creation or initialization failed';
+    } else if (account.status === 'expired') {
+      dto.confirmationStatus = 'expired';
+    }
+
+    return dto;
   }
 }
