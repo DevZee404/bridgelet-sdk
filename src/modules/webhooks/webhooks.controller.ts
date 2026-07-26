@@ -126,4 +126,12 @@ export class WebhooksController {
   public async remove(@Param('id') id: string): Promise<void> {
     await this.webhooksService.remove(id);
   }
+
+  @Post(':id/test')
+  @ApiOperation({ summary: 'Send a test webhook event' })
+  @ApiResponse({ status: 200, description: 'Test event sent successfully' })
+  @ApiResponse({ status: 404, description: 'Webhook not found' })
+  public async test(@Param('id') id: string): Promise<void> {
+    await this.webhooksService.test(id);
+  }
 }

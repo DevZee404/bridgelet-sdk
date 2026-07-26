@@ -200,6 +200,36 @@ describe('WebhooksService', () => {
   });
 
   // -------------------------------------------------------------------------
+  // test
+  // -------------------------------------------------------------------------
+
+  describe('test()', () => {
+    it('sends a test event to the webhook', async () => {
+      const webhook = makeWebhook();
+      mockWebhookRepository.findOne.mockResolvedValue(webhook);
+
+      const deliverSpy = jest
+        .spyOn(service as any, 'deliver')
+        .mockResolvedValue(undefined);
+
+      await service.test(webhook.id);
+
+      expect(mockWebhookRepository.findOne).toHaveBeenCalledWith({
+        where: { id: webhook.id },
+      });
+      expect(deliverSpy).toHaveBeenCalledWith(webhook, 'webhook.test', {});
+    });
+
+    it('throws NotFoundException when the webhook does not exist', async () => {
+      mockWebhookRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.test('missing-id')).rejects.toThrow(
+        'Webhook with ID missing-id not found',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // triggerEvent — successful delivery
   // -------------------------------------------------------------------------
 

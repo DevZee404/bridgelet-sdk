@@ -12,6 +12,7 @@ const mockWebhooksService = {
   findAll: jest.fn(),
   update: jest.fn(),
   remove: jest.fn(),
+  test: jest.fn(),
 };
 
 function makeWebhookResponse(overrides = {}): WebhookResponseDto {
@@ -126,6 +127,16 @@ describe('WebhooksController', () => {
       await controller.remove('wh-uuid-1');
 
       expect(mockWebhooksService.remove).toHaveBeenCalledWith('wh-uuid-1');
+    });
+  });
+
+  describe('test', () => {
+    it('delegates to webhooksService.test', async () => {
+      mockWebhooksService.test.mockResolvedValue(undefined);
+
+      await controller.test('wh-uuid-1');
+
+      expect(mockWebhooksService.test).toHaveBeenCalledWith('wh-uuid-1');
     });
   });
 });

@@ -5,4 +5,5 @@ export enum WebhookEvent {
   SweepCompleted = 'sweep.completed',
   SweepFailed = 'sweep.failed',
   PaymentReceived = 'payment.received',
+  WebhookTest = 'webhook.test',
 }

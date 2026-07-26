@@ -157,6 +157,18 @@ export class WebhooksService {
     await this.webhookRepository.save(webhook);
   }
 
+  async test(id: string): Promise<void> {
+    const webhook = await this.webhookRepository.findOne({
+      where: { id },
+    });
+
+    if (!webhook) {
+      throw new NotFoundException(`Webhook with ID ${id} not found`);
+    }
+
+    await this.deliver(webhook, 'webhook.test', {});
+  }
+
   /**
    * Fires an event to all active webhooks subscribed to that event type.
    * Never throws — delivery failures are logged but do not propagate.
