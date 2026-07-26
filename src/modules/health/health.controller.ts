@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import { Public } from '../../common/decorators/public.decorator.js';
 
 /**
  * Maximum milliseconds to wait for a pool connection before reporting the
@@ -22,6 +23,7 @@ export class HealthController {
   ) {}
 
   @Get()
+  @Public()
   @HttpCode(200)
   @ApiOperation({ summary: 'Health check – includes database and Horizon status' })
   @ApiResponse({ status: 200, description: 'Service is healthy' })
