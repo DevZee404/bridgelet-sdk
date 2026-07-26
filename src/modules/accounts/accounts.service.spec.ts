@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { NotFoundException } from '@nestjs/common';
-import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+import { getToken } from '@willsoto/nestjs-prometheus';
 import { AccountsService } from './accounts.service.js';
 import { Account } from './entities/account.entity.js';
 import { StellarService } from '../stellar/stellar.service.js';
@@ -68,7 +68,6 @@ describe('AccountsService', () => {
     });
 
     const module: TestingModule = await Test.createTestingModule({
-      imports: [PrometheusModule.register()],
       providers: [
         AccountsService,
         { provide: getRepositoryToken(Account), useValue: mockRepo },
@@ -77,6 +76,12 @@ describe('AccountsService', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: WebhooksService, useValue: mockWebhooksService },
         AccountLatencyMetricsProvider,
+        {
+          provide: getToken('account_creation_total'),
+          useValue: {
+            inc: jest.fn(),
+          },
+        },
         {
           provide: KmsKeyProvider,
           useValue: {
