@@ -195,25 +195,20 @@ export class WebhooksService {
     payload: Record<string, unknown>,
     maxRetries = 3,
   ): Promise<void> {
-    const delivery = this.deliveryRepository.create({
-      subscriptionId: webhook.id,
-      eventType,
-      payloadHash: '', // Placeholder, will be updated
-      attemptCount: 0,
-      lastResponseCode: null,
-      lastResponseBody: null,
-      deliveredAt: null,
-    });
-    await this.deliveryRepository.save(delivery);
-
+    const deliveryId = crypto.randomUUID();
     const body = JSON.stringify({
-      id: delivery.id,
+      id: deliveryId,
       event: eventType,
       ...payload,
     });
     const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
-    delivery.payloadHash = payloadHash;
-    await this.deliveryRepository.save(delivery);
+
+    const delivery = this.deliveryRepository.create({
+      id: deliveryId,
+      subscriptionId: webhook.id,
+      eventType,
+      payloadHash,
+    });
 
     const signature = this.computeSignature(body, webhook.secret);
 
