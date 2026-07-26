@@ -197,7 +197,9 @@ export class StellarService {
     sweepControllerContractId: string;
     fundingKeypairSecret?: string;
   }): Promise<string> {
-    this.logger.log(`Creating ephemeral account: ${params.publicKey}`);
+    this.logger.log(
+      `Creating ephemeral account: ${LogSanitizer.redactAddress(params.publicKey)}`,
+    );
 
     const fundingSecret =
       params.fundingKeypairSecret ??
@@ -455,7 +457,7 @@ export class StellarService {
 
     await this.waitForTransaction(result.hash);
     this.logger.log(
-      `Sweep executed: ${params.ephemeralAccountContractId} → ${params.destination}`,
+      `Sweep executed: ${params.ephemeralAccountContractId} → ${LogSanitizer.redactAddress(params.destination)}`,
     );
   }
 

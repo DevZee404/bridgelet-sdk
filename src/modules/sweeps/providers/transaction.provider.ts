@@ -22,6 +22,7 @@ import {
 import type { ExecuteTransactionParams } from '../interfaces/execute-transaction-params.interface.js';
 import type { TransactionResult } from '../interfaces/transaction-result.interface.js';
 import type { MergeAccountParams } from '../interfaces/merge-account-params.interface.js';
+import { LogSanitizer } from '../../../common/utils/log-sanitizer.util.js';
 
 interface HorizonErrorResponse {
   response?: {
@@ -139,7 +140,7 @@ export class TransactionProvider {
     params: ExecuteTransactionParams,
   ): Promise<TransactionResult> {
     this.logger.log(
-      `Executing sweep transaction to ${params.destinationAddress}`,
+      `Executing sweep transaction to ${LogSanitizer.redactAddress(params.destinationAddress)}`,
     );
 
     try {

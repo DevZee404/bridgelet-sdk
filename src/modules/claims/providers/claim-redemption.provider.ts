@@ -45,7 +45,9 @@ export class ClaimRedemptionProvider {
     destinationAddress: string,
     ip?: string | null,
   ): Promise<ClaimRedemptionResponseDto> {
-    this.logger.log(`Redeeming claim for destination: ${destinationAddress}`);
+    this.logger.log(
+      `Redeeming claim for destination: ${LogSanitizer.redactAddress(destinationAddress)}`,
+    );
 
     const tokenHash = this.hashToken(token);
 

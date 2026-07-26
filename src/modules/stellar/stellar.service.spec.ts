@@ -194,7 +194,6 @@ describe('StellarService', () => {
 
     it('applies the buffer on top of the ledger conversion', async () => {
       jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(500);
-      // 5s / 5 = exactly 1 ledger; without buffer result would be 501
       const result = await service.toExpiryLedger(5);
       expect(result).toBe(511); // 500 + 1 + 10 (buffer)
     });
@@ -202,7 +201,6 @@ describe('StellarService', () => {
     it('handles edge case: getCurrentLedger returns a very low value', async () => {
       jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(1);
       const result = await service.toExpiryLedger(3600);
-      // 3600 / 5 = 720 + 10 buffer + 1 current = 731
       expect(result).toBe(731);
     });
 
@@ -210,7 +208,6 @@ describe('StellarService', () => {
       const currentLedger = 1000;
       jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(currentLedger);
       const result = await service.toExpiryLedger(3600);
-      // 730 ledgers ahead - meaningfully greater than current
       expect(result).toBeGreaterThan(currentLedger + 100);
     });
 
@@ -740,6 +737,214 @@ describe('StellarService', () => {
 
       await expect(service.getAccountInfo(CONTRACT_ID)).rejects.toThrow(
         'unexpected ScVal type',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // createEphemeralAccount
+  // -------------------------------------------------------------------------
+
+  describe('createEphemeralAccount', () => {
+    const params = {
+      publicKey: 'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
+      amount: '2',
+      asset: 'native',
+      expiresIn: 3600,
+      recoveryAddress: 'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
+      contractId: 'CONTRACT_ID_123',
+      fundingKeypairSecret:
+        'SCZANGBA5YHTNYVVV1J77DT4NK7WVIGZFFR3KDWZEQFEMFX65ZDFNEKX',
+    };
+
+    beforeEach(() => {
+      mockLoadAccount.mockResolvedValue(
+        new StellarSdk.Account(
+          'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+          '0',
+        ),
+      );
+      mockSubmitTransaction.mockResolvedValue({ hash: 'TX_HASH_123' });
+      mockGetAccount.mockResolvedValue(
+        new StellarSdk.Account(
+          'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+          '0',
+        ),
+      );
+      mockPrepareTransaction.mockImplementation(async (tx) => tx);
+      mockSendTransaction.mockResolvedValue({
+        status: 'SUCCESS',
+        hash: 'INIT_HASH_456',
+      });
+      jest
+        .spyOn(service, 'getCurrentLedger')
+        .mockResolvedValue(1000);
+    });
+
+    it('returns a transaction hash on success', async () => {
+      const hash = await service.createEphemeralAccount(params);
+      expect(hash).toBe('TX_HASH_123');
+    });
+
+    it('calls Horizon to create the account', async () => {
+      await service.createEphemeralAccount(params);
+      expect(mockHorizonServer.loadAccount).toHaveBeenCalled();
+      expect(mockSubmitTransaction).toHaveBeenCalled();
+    });
+
+    it('calls Soroban to initialize the contract', async () => {
+      await service.createEphemeralAccount(params);
+      expect(mockSorobanServer.prepareTransaction).toHaveBeenCalled();
+      expect(mockSorobanServer.sendTransaction).toHaveBeenCalled();
+    });
+
+    it('throws when contract initialization fails', async () => {
+      mockSendTransaction.mockResolvedValue({
+        status: 'ERROR',
+        errorResult: 'ContractError(NotInitialized)',
+      });
+
+      await expect(service.createEphemeralAccount(params)).rejects.toThrow(
+        'Contract initialization failed',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // recordPayment
+  // -------------------------------------------------------------------------
+
+  describe('recordPayment', () => {
+    const params = {
+      contractId: 'CONTRACT123',
+      amount: 1000000n,
+      assetAddress: 'CASSETTE_ADDR',
+      signerSecret:
+        'SCZANGBA5YHTNYVVV1J77DT4NK7WVIGZFFR3KDWZEQFEMFX65ZDFNEKX',
+    };
+
+    beforeEach(() => {
+      mockGetAccount.mockResolvedValue(
+        new StellarSdk.Account(
+          'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
+          '0',
+        ),
+      );
+      mockPrepareTransaction.mockImplementation(async (tx) => tx);
+      mockSendTransaction.mockResolvedValue({
+        status: 'SUCCESS',
+        hash: 'RECORD_HASH',
+      });
+    });
+
+    it('succeeds and returns void', async () => {
+      await expect(service.recordPayment(params)).resolves.toBeUndefined();
+    });
+
+    it('throws when Soroban returns an error', async () => {
+      mockSendTransaction.mockResolvedValue({
+        status: 'ERROR',
+        errorResult: 'ContractError(DuplicateAsset)',
+      });
+
+      await expect(service.recordPayment(params)).rejects.toThrow(
+        'record_payment failed',
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // getAccountInfo
+  // -------------------------------------------------------------------------
+
+  describe('getAccountInfo', () => {
+    it('parses get_info simulation result correctly', async () => {
+      // Build a mock ScVal map result
+      const mockVal = {
+        map: () => [
+          {
+            key: () => ({ sym: () => 'status' }),
+            val: () => ({ u32: () => 2 }),
+          },
+          {
+            key: () => ({ sym: () => 'expiry_ledger' }),
+            val: () => ({ u32: () => 5000 }),
+          },
+          {
+            key: () => ({ sym: () => 'payment_received' }),
+            val: () => ({ b: () => true }),
+          },
+          {
+            key: () => ({ sym: () => 'payment_count' }),
+            val: () => ({ u32: () => 1 }),
+          },
+          {
+            key: () => ({ sym: () => 'recovery_address' }),
+            val: () => null,
+          },
+        ],
+      };
+
+      // Mock Address.fromScVal to return a fake address string
+      const originalFromScVal = StellarSdk.Address.fromScVal;
+      StellarSdk.Address.fromScVal = jest.fn().mockReturnValue({
+        toString: () => 'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
+      });
+
+      mockSimulateTransaction.mockResolvedValue({
+        result: { retval: mockVal },
+      });
+
+      // We need to mock 'get' lookup for recovery_address
+      // The function accesses the fields array, so we need the recovery_address entry to have a val
+      // Re-do with recovery_address present
+      const mockVal2 = {
+        map: () => [
+          {
+            key: () => ({ sym: () => 'status' }),
+            val: () => ({ u32: () => 2 }),
+          },
+          {
+            key: () => ({ sym: () => 'expiry_ledger' }),
+            val: () => ({ u32: () => 5000 }),
+          },
+          {
+            key: () => ({ sym: () => 'payment_received' }),
+            val: () => ({ b: () => true }),
+          },
+          {
+            key: () => ({ sym: () => 'payment_count' }),
+            val: () => ({ u32: () => 1 }),
+          },
+          {
+            key: () => ({ sym: () => 'recovery_address' }),
+            val: () => ({ dummy: true }),
+          },
+        ],
+      };
+      mockSimulateTransaction.mockResolvedValue({
+        result: { retval: mockVal2 },
+      });
+
+      const info = await service.getAccountInfo('CONTRACT123');
+
+      expect(info.expiry_ledger).toBe(5000);
+      expect(info.payment_received).toBe(true);
+      expect(info.payment_count).toBe(1);
+      expect(info.recovery_address).toBe(
+        'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
+      );
+
+      StellarSdk.Address.fromScVal = originalFromScVal;
+    });
+
+    it('throws when simulation returns an error', async () => {
+      mockSimulateTransaction.mockResolvedValue({
+        error: 'contract not found',
+      });
+
+      await expect(service.getAccountInfo('BAD')).rejects.toThrow(
+        'get_info simulation failed',
       );
     });
   });
