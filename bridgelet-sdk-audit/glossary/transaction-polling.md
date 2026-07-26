@@ -6,9 +6,9 @@
 
 `StellarService.waitForTransaction()` employs a fixed polling loop to check the status of a submitted transaction. The key characteristics of this loop are:
 
-*   **Attempts:** 10 attempts.
-*   **Interval:** 2 seconds between each attempt.
-*   **Total Time:** This results in a total polling duration of approximately 20 seconds.
+- **Attempts:** 10 attempts.
+- **Interval:** 2 seconds between each attempt.
+- **Total Time:** This results in a total polling duration of approximately 20 seconds.
 
 ## Usage
 
