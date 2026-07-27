@@ -47,7 +47,7 @@ exact order:
 
 `bridgelet-core`'s `AccountFactory.batch_initialize()` calls the same
 `initialize()` entry point but reuses its own `creator` parameter for
-*both* `authorized_controller` and `admin` (see `bridgelet-core`'s
+_both_ `authorized_controller` and `admin` (see `bridgelet-core`'s
 `bridgelet-audit/threat-models/account-factory-deployment-flow.md`, "Authorized
 Controller and Admin Relationship" section, and
 `contracts/account_factory/src/multiple.rs`, lines ~70-71:
