@@ -14,6 +14,7 @@ import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter } from 'prom-client';
 import { SweepMetricsProvider } from './providers/sweep-metrics.provider.js';
 import { Account } from '../accounts/entities/account.entity.js';
+import { AccountStatus } from '../accounts/enums/account-status.enum.js';
 import { Claim } from '../claims/entities/claim.entity.js';
 import type { SweepStatusResponseDto } from './dto/sweep-status-response.dto.js';
 
@@ -285,18 +286,18 @@ export class SweepsService {
       dto.sweepTxHash = claim.sweepTxHash;
       dto.sweptAt = claim.claimedAt;
 
-      if (account.status === 'claimed') {
+      if (account.status === AccountStatus.CLAIMED) {
         dto.confirmationStatus = 'confirmed';
-      } else if (account.status === 'partial_sweep') {
+      } else if (account.status === AccountStatus.PARTIAL_SWEEP) {
         dto.confirmationStatus = 'partial';
         dto.error = 'Contract authorized but Horizon payment failed';
-      } else if (account.status === 'claiming') {
+      } else if (account.status === AccountStatus.CLAIMING) {
         dto.confirmationStatus = 'pending';
       }
-    } else if (account.status === 'failed') {
+    } else if (account.status === AccountStatus.FAILED) {
       dto.confirmationStatus = 'failed';
       dto.error = 'Account creation or initialization failed';
-    } else if (account.status === 'expired') {
+    } else if (account.status === AccountStatus.EXPIRED) {
       dto.confirmationStatus = 'expired';
     }
 

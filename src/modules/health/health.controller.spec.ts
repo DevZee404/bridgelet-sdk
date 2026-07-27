@@ -7,7 +7,6 @@ import { HealthController } from './health.controller.js';
 /** Shared factory: creates a NestJS test module with a mocked DataSource. */
 async function buildModule(
   dataSourceMock: Partial<DataSource>,
-  horizonHealthy = true,
 ): Promise<TestingModule> {
   const mockConfigService = {
     get: jest.fn().mockImplementation((key: string) => {

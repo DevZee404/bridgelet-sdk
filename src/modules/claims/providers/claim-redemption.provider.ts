@@ -20,6 +20,7 @@ import { TransactionHashValidator } from '../../../common/validators/transaction
 import { StellarAddressValidator } from '../../../common/validators/stellar-address.validator.js';
 import { WebhooksService } from '../../webhooks/webhooks.service.js';
 import { ClaimAuditProvider } from './claim-audit.provider.js';
+import { LogSanitizer } from '../../../common/utils/log-sanitizer.util.js';
 
 @Injectable()
 export class ClaimRedemptionProvider {

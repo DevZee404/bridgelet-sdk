@@ -4,10 +4,8 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import { rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Histogram } from 'prom-client';
-import {
-  redactSecrets,
-  sanitizeErrorMessage,
-} from '../../common/utils/secret-redaction.util.js';
+import { sanitizeErrorMessage } from '../../common/utils/secret-redaction.util.js';
+import { LogSanitizer } from '../../common/utils/log-sanitizer.util.js';
 
 export const EXPIRY_BUFFER_LEDGERS = 10;
 
@@ -97,7 +95,11 @@ export class StellarService {
     sequence: number;
     hash: string;
   }> {
-    const info = await this.sorobanServer.getLatestLedger();
+    const info: { sequence: number; hash: string } =
+      (await this.sorobanServer.getLatestLedger()) as {
+        sequence: number;
+        hash: string;
+      };
     return {
       sequence: info.sequence,
       hash: info.hash,

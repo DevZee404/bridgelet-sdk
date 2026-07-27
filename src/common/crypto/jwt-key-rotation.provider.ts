@@ -66,7 +66,7 @@ export class JwtKeyRotationProvider {
    */
   verify<T extends Record<string, unknown>>(token: string): T {
     const decoded = jwt.decode(token, { complete: true });
-    const kid = decoded?.header?.kid as string | undefined;
+    const kid = decoded?.header?.kid;
 
     if (kid) {
       const key = this.keys.find((k) => k.kid === kid);

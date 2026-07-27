@@ -21,15 +21,10 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import * as StellarSdk from '@stellar/stellar-sdk';
 
 import { AppModule } from '../../src/app.module.js';
 import { StellarService } from '../../src/modules/stellar/stellar.service.js';
 import { AccountsService } from '../../src/modules/accounts/accounts.service.js';
-import { ClaimsService } from '../../src/modules/claims/claims.service.js';
-import { SweepsService } from '../../src/modules/sweeps/sweeps.service.js';
 
 const TESTNET_E2E = process.env.TESTNET_E2E === '1';
 const describeOrSkip = TESTNET_E2E ? describe : describe.skip;
@@ -38,8 +33,6 @@ describeOrSkip('Stellar Testnet E2E', () => {
   let app: INestApplication;
   let stellarService: StellarService;
   let accountsService: AccountsService;
-  let claimsService: ClaimsService;
-  let sweepsService: SweepsService;
 
   const fundedSecret = process.env.FUNDING_ACCOUNT_SECRET;
   const recoveryPublic = process.env.RECOVERY_ACCOUNT_PUBLIC;
@@ -67,8 +60,6 @@ describeOrSkip('Stellar Testnet E2E', () => {
 
     stellarService = moduleFixture.get<StellarService>(StellarService);
     accountsService = moduleFixture.get<AccountsService>(AccountsService);
-    claimsService = moduleFixture.get<ClaimsService>(ClaimsService);
-    sweepsService = moduleFixture.get<SweepsService>(SweepsService);
   }, 30_000);
 
   afterAll(async () => {
