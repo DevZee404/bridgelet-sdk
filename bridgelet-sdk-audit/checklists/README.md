@@ -19,5 +19,6 @@ This directory contains standardized checklists used during internal code audits
 - [Contract-Address Configuration](./contract-address-configuration-checklist.md)
 - [Logging and Observability](./logging-and-observability-checklist.md)
 - [Claims Module Review](./claim-module-review-checklist.md)
+- [MVP Note Accuracy](./mvp-note-accuracy-checklist.md)
 
 Please ensure these checklists are completed during PR reviews for relevant components.
