@@ -10,14 +10,12 @@ import { JwtKeyRotationProvider } from '../../common/crypto/jwt-key-rotation.pro
 
 const mockJwtKeyRotation = {
   sign: jest.fn().mockReturnValue('mock-jwt-token'),
-  verify: jest
-    .fn()
-    .mockReturnValue({
-      publicKey: 'test',
-      type: 'claim',
-      iat: 0,
-      exp: 9999999999,
-    }),
+  verify: jest.fn().mockReturnValue({
+    publicKey: 'test',
+    type: 'claim',
+    iat: 0,
+    exp: 9999999999,
+  }),
   getJwks: jest.fn().mockReturnValue({ keys: [] }),
 };
 
