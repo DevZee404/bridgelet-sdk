@@ -9,6 +9,8 @@ const mockExecutionContext = (apiKey?: string): ExecutionContext => {
   } as unknown as AuthenticatedRequest;
   return {
     switchToHttp: () => ({ getRequest: () => request }),
+    getHandler: () => ({}),
+    getClass: () => ({}),
   } as unknown as ExecutionContext;
 };
 
@@ -23,12 +25,14 @@ const mockIntegrator = (): Integrator => ({
 describe('ApiKeyAuthGuard', () => {
   let guard: ApiKeyAuthGuard;
   let integratorsService: jest.Mocked<IntegratorsService>;
+  let reflector: { getAllAndOverride: jest.Mock };
 
   beforeEach(() => {
     integratorsService = {
       findActiveByApiKey: jest.fn(),
     } as unknown as jest.Mocked<IntegratorsService>;
-    guard = new ApiKeyAuthGuard(integratorsService);
+    reflector = { getAllAndOverride: jest.fn().mockReturnValue(false) };
+    guard = new ApiKeyAuthGuard(integratorsService, reflector as any);
   });
 
   it('allows a request with a valid, active API key and attaches integratorId', async () => {

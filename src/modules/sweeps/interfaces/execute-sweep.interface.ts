@@ -21,4 +21,5 @@ export interface SweepExecutionRequest {
    * assets are discovered from Horizon.
    */
   sweepAllAssets?: boolean;
+  dryRun?: boolean;
 }

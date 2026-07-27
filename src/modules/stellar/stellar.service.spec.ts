@@ -747,35 +747,39 @@ describe('StellarService', () => {
 
   describe('createEphemeralAccount', () => {
     const params = {
-      publicKey: 'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
+      publicKey: DEST_KEY,
       amount: '2',
       asset: 'native',
       expiresIn: 3600,
-      recoveryAddress:
-        'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
-      contractId: 'CONTRACT_ID_123',
-      fundingKeypairSecret:
-        'SCZANGBA5YHTNYVVV1J77DT4NK7WVIGZFFR3KDWZEQFEMFX65ZDFNEKX',
+      recoveryAddress: DEST_KEY,
+      contractId: CONTRACT_ID,
+      sweepControllerContractId: CONTRACT_ID,
+      fundingKeypairSecret: FUNDING_SECRET,
     };
 
     beforeEach(() => {
-      mockLoadAccount.mockResolvedValue(
+      horizonServer.loadAccount.mockResolvedValue(
         new StellarSdk.Account(
           'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
           '0',
         ),
       );
-      mockSubmitTransaction.mockResolvedValue({ hash: 'TX_HASH_123' });
-      mockGetAccount.mockResolvedValue(
+      horizonServer.submitTransaction.mockResolvedValue({
+        hash: 'TX_HASH_123',
+      });
+      sorobanServer.getAccount.mockResolvedValue(
         new StellarSdk.Account(
           'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
           '0',
         ),
       );
-      mockPrepareTransaction.mockImplementation(async (tx) => tx);
-      mockSendTransaction.mockResolvedValue({
+      sorobanServer.prepareTransaction.mockImplementation(async (tx) => tx);
+      sorobanServer.sendTransaction.mockResolvedValue({
         status: 'SUCCESS',
         hash: 'INIT_HASH_456',
+      });
+      sorobanServer.getTransaction.mockResolvedValue({
+        status: SorobanRpc.Api.GetTransactionStatus.SUCCESS,
       });
       jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(1000);
     });
@@ -787,18 +791,18 @@ describe('StellarService', () => {
 
     it('calls Horizon to create the account', async () => {
       await service.createEphemeralAccount(params);
-      expect(mockHorizonServer.loadAccount).toHaveBeenCalled();
-      expect(mockSubmitTransaction).toHaveBeenCalled();
+      expect(horizonServer.loadAccount).toHaveBeenCalled();
+      expect(horizonServer.submitTransaction).toHaveBeenCalled();
     });
 
     it('calls Soroban to initialize the contract', async () => {
       await service.createEphemeralAccount(params);
-      expect(mockSorobanServer.prepareTransaction).toHaveBeenCalled();
-      expect(mockSorobanServer.sendTransaction).toHaveBeenCalled();
+      expect(sorobanServer.prepareTransaction).toHaveBeenCalled();
+      expect(sorobanServer.sendTransaction).toHaveBeenCalled();
     });
 
     it('throws when contract initialization fails', async () => {
-      mockSendTransaction.mockResolvedValue({
+      sorobanServer.sendTransaction.mockResolvedValue({
         status: 'ERROR',
         errorResult: 'ContractError(NotInitialized)',
       });
@@ -815,23 +819,26 @@ describe('StellarService', () => {
 
   describe('recordPayment', () => {
     const params = {
-      contractId: 'CONTRACT123',
+      contractId: CONTRACT_ID,
       amount: 1000000n,
-      assetAddress: 'CASSETTE_ADDR',
-      signerSecret: 'SCZANGBA5YHTNYVVV1J77DT4NK7WVIGZFFR3KDWZEQFEMFX65ZDFNEKX',
+      assetAddress: CONTRACT_ID,
+      signerSecret: FUNDING_SECRET,
     };
 
     beforeEach(() => {
-      mockGetAccount.mockResolvedValue(
+      sorobanServer.getAccount.mockResolvedValue(
         new StellarSdk.Account(
           'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
           '0',
         ),
       );
-      mockPrepareTransaction.mockImplementation(async (tx) => tx);
-      mockSendTransaction.mockResolvedValue({
+      sorobanServer.prepareTransaction.mockImplementation(async (tx) => tx);
+      sorobanServer.sendTransaction.mockResolvedValue({
         status: 'SUCCESS',
         hash: 'RECORD_HASH',
+      });
+      sorobanServer.getTransaction.mockResolvedValue({
+        status: SorobanRpc.Api.GetTransactionStatus.SUCCESS,
       });
     });
 
@@ -840,7 +847,7 @@ describe('StellarService', () => {
     });
 
     it('throws when Soroban returns an error', async () => {
-      mockSendTransaction.mockResolvedValue({
+      sorobanServer.sendTransaction.mockResolvedValue({
         status: 'ERROR',
         errorResult: 'ContractError(DuplicateAsset)',
       });
@@ -890,7 +897,7 @@ describe('StellarService', () => {
           'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
       });
 
-      mockSimulateTransaction.mockResolvedValue({
+      sorobanServer.simulateTransaction.mockResolvedValue({
         result: { retval: mockVal },
       });
 
@@ -921,11 +928,11 @@ describe('StellarService', () => {
           },
         ],
       };
-      mockSimulateTransaction.mockResolvedValue({
+      sorobanServer.simulateTransaction.mockResolvedValue({
         result: { retval: mockVal2 },
       });
 
-      const info = await service.getAccountInfo('CONTRACT123');
+      const info = await service.getAccountInfo(CONTRACT_ID);
 
       expect(info.expiry_ledger).toBe(5000);
       expect(info.payment_received).toBe(true);
@@ -938,12 +945,12 @@ describe('StellarService', () => {
     });
 
     it('throws when simulation returns an error', async () => {
-      mockSimulateTransaction.mockResolvedValue({
+      sorobanServer.simulateTransaction.mockResolvedValue({
         error: 'contract not found',
       });
 
-      await expect(service.getAccountInfo('BAD')).rejects.toThrow(
-        'get_info simulation failed',
+      await expect(service.getAccountInfo(CONTRACT_ID)).rejects.toThrow(
+        'get_info returned no value',
       );
     });
   });

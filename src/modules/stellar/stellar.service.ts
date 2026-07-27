@@ -95,11 +95,10 @@ export class StellarService {
     sequence: number;
     hash: string;
   }> {
-    const info: { sequence: number; hash: string } =
-      (await this.sorobanServer.getLatestLedger()) as {
-        sequence: number;
-        hash: string;
-      };
+    const info = (await this.sorobanServer.getLatestLedger()) as unknown as {
+      sequence: number;
+      hash: string;
+    };
     return {
       sequence: info.sequence,
       hash: info.hash,
