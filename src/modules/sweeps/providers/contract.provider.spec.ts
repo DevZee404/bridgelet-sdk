@@ -74,7 +74,9 @@ jest.mock('@stellar/stellar-sdk', () => {
     },
     Keypair: {
       fromSecret: jest.fn(() => ({
-        publicKey: jest.fn(() => 'GBBM6BKZPEHWYO3E3YKRETPKQ5MRNWSKA722GHBMZABXD4F2J2RROMSG'),
+        publicKey: jest.fn(
+          () => 'GBBM6BKZPEHWYO3E3YKRETPKQ5MRNWSKA722GHBMZABXD4F2J2RROMSG',
+        ),
       })),
     },
     xdr: {

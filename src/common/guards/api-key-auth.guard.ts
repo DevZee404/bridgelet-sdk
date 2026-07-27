@@ -49,14 +49,18 @@ export class ApiKeyAuthGuard implements CanActivate {
 
     if (!apiKey || typeof apiKey !== 'string') {
       const ip = request.ip ?? request.socket?.remoteAddress ?? 'unknown';
-      this.logger.warn(`Rejected request with missing API key from ${ip} ${request.method} ${request.url}`);
+      this.logger.warn(
+        `Rejected request with missing API key from ${ip} ${request.method} ${request.url}`,
+      );
       throw new UnauthorizedException('Missing X-API-Key header');
     }
 
     const integrator = await this.integratorsService.findActiveByApiKey(apiKey);
     if (!integrator) {
       const ip = request.ip ?? request.socket?.remoteAddress ?? 'unknown';
-      this.logger.warn(`Rejected request with invalid API key from ${ip} ${request.method} ${request.url}`);
+      this.logger.warn(
+        `Rejected request with invalid API key from ${ip} ${request.method} ${request.url}`,
+      );
       throw new UnauthorizedException('Invalid or disabled API key');
     }
 

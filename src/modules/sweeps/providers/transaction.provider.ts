@@ -202,7 +202,9 @@ export class TransactionProvider {
 
       // Extract more details from Horizon error
       if (typedError.response?.data) {
-        const extras = redactSecrets(JSON.stringify(typedError.response.data.extras) ?? '');
+        const extras = redactSecrets(
+          JSON.stringify(typedError.response.data.extras) ?? '',
+        );
         this.logger.error(`Transaction extras: ${extras}`);
       }
 
@@ -407,10 +409,7 @@ export class TransactionProvider {
 
         if (b.asset_type === 'native') {
           balances.push({ asset: 'native', amount: b.balance });
-        } else if (
-          'asset_code' in b &&
-          'asset_issuer' in b
-        ) {
+        } else if ('asset_code' in b && 'asset_issuer' in b) {
           balances.push({
             asset: `${b.asset_code}:${b.asset_issuer}`,
             amount: b.balance,

@@ -14,16 +14,21 @@ describe('CORS configuration (Issue #205)', () => {
     process.env.NODE_ENV = 'development';
     delete process.env.CORS_ORIGINS;
 
-    const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean);
+    const corsOrigins = process.env.CORS_ORIGINS?.split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
     const origin = corsOrigins && corsOrigins.length > 0 ? corsOrigins : false;
 
     expect(origin).toBe(false);
   });
 
   it('parses CORS_ORIGINS into an array', () => {
-    process.env.CORS_ORIGINS = 'https://app.bridgelet.io, https://admin.bridgelet.io';
+    process.env.CORS_ORIGINS =
+      'https://app.bridgelet.io, https://admin.bridgelet.io';
 
-    const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean);
+    const corsOrigins = process.env.CORS_ORIGINS?.split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
     expect(corsOrigins).toEqual([
       'https://app.bridgelet.io',
       'https://admin.bridgelet.io',
@@ -34,10 +39,13 @@ describe('CORS configuration (Issue #205)', () => {
     process.env.NODE_ENV = 'production';
     process.env.CORS_ORIGINS = '';
 
-    const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean);
+    const corsOrigins = process.env.CORS_ORIGINS?.split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
     const isProduction = process.env.NODE_ENV === 'production';
 
-    const shouldExit = isProduction && (!corsOrigins || corsOrigins.length === 0);
+    const shouldExit =
+      isProduction && (!corsOrigins || corsOrigins.length === 0);
     expect(shouldExit).toBe(true);
   });
 });

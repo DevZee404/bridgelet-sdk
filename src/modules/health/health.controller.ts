@@ -25,7 +25,9 @@ export class HealthController {
   @Get()
   @Public()
   @HttpCode(200)
-  @ApiOperation({ summary: 'Health check – includes database and Horizon status' })
+  @ApiOperation({
+    summary: 'Health check – includes database and Horizon status',
+  })
   @ApiResponse({ status: 200, description: 'Service is healthy' })
   @ApiResponse({ status: 503, description: 'Service is unhealthy' })
   async check() {
@@ -48,7 +50,8 @@ export class HealthController {
     error?: string;
   }> {
     const horizonUrl = this.configService.get<string>('stellar.horizonUrl');
-    if (!horizonUrl) return { healthy: false, error: 'No Horizon URL configured' };
+    if (!horizonUrl)
+      return { healthy: false, error: 'No Horizon URL configured' };
 
     try {
       const resp = await fetch(`${horizonUrl}/ledgers?limit=1&order=desc`, {

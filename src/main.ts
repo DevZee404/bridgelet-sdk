@@ -46,7 +46,9 @@ async function bootstrap() {
     }),
   );
 
-  const corsOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean);
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
 
   if (isProduction && (!corsOrigins || corsOrigins.length === 0)) {
     const bootstrapLogger = new Logger('Bootstrap');
@@ -60,7 +62,12 @@ async function bootstrap() {
   app.enableCors({
     origin: corsOrigins && corsOrigins.length > 0 ? corsOrigins : false,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-Id'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-API-Key',
+      'X-Request-Id',
+    ],
     credentials: corsOrigins && corsOrigins.length > 0,
     maxAge: 86400,
   });

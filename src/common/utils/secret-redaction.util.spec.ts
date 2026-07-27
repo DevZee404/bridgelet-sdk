@@ -27,7 +27,8 @@ describe('secret-redaction.util', () => {
     });
 
     it('does not redact contract IDs (C... addresses)', () => {
-      const contractId = 'CAAOB3U4ZRR73S52B7APXZS5GIHRGP1H7QYGJ4N5ZGBL6H3B5MCL525';
+      const contractId =
+        'CAAOB3U4ZRR73S52B7APXZS5GIHRGP1H7QYGJ4N5ZGBL6H3B5MCL525';
       const result = redactSecrets(`Contract: ${contractId}`);
       expect(result).toBe(`Contract: ${contractId}`);
     });

@@ -50,9 +50,7 @@ export class StellarService {
 
     if (horizonFallbackUrl) {
       this.fallbackServer = new StellarSdk.Horizon.Server(horizonFallbackUrl);
-      this.logger.log(
-        `Horizon fallback configured: ${horizonFallbackUrl}`,
-      );
+      this.logger.log(`Horizon fallback configured: ${horizonFallbackUrl}`);
     }
 
     this.logger.log(`Initialized Stellar service for ${this.network}`);
@@ -121,11 +119,7 @@ export class StellarService {
 
     try {
       const server = this.getActiveHorizonServer();
-      const ledgerPage = await server
-        .ledgers()
-        .order('desc')
-        .limit(1)
-        .call();
+      const ledgerPage = await server.ledgers().order('desc').limit(1).call();
 
       const sequence = ledgerPage.records[0].sequence;
       this.ledgerCache = { sequence, fetchedAt: now };
@@ -285,9 +279,7 @@ export class StellarService {
       this.logger.error(
         `Contract initialize() failed for ${params.publicKey}: ${errorDetail}`,
       );
-      throw new Error(
-        `Contract initialization failed for ${params.publicKey}`,
-      );
+      throw new Error(`Contract initialization failed for ${params.publicKey}`);
     }
 
     // Poll for confirmation
@@ -463,7 +455,9 @@ export class StellarService {
       if (errStr.includes('AlreadySwept')) throw new Error('ALREADY_SWEPT');
       if (errStr.includes('AccountExpired')) throw new Error('ACCOUNT_EXPIRED');
 
-      throw new Error(`execute_sweep failed for ${params.ephemeralAccountContractId}`);
+      throw new Error(
+        `execute_sweep failed for ${params.ephemeralAccountContractId}`,
+      );
     }
 
     await this.waitForTransaction(result.hash);

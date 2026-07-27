@@ -21,13 +21,24 @@ export class JwtKeyRotationProvider {
   private readonly keys: SigningKey[] = [];
 
   constructor(private readonly configService: ConfigService) {
-    const currentSecret = this.configService.getOrThrow<string>('app.jwtSecret');
-    this.keys.push({ kid: this.generateKid(currentSecret), secret: currentSecret });
+    const currentSecret =
+      this.configService.getOrThrow<string>('app.jwtSecret');
+    this.keys.push({
+      kid: this.generateKid(currentSecret),
+      secret: currentSecret,
+    });
 
-    const previousSecret = this.configService.get<string>('app.jwtPreviousSecret');
+    const previousSecret = this.configService.get<string>(
+      'app.jwtPreviousSecret',
+    );
     if (previousSecret) {
-      this.keys.push({ kid: this.generateKid(previousSecret), secret: previousSecret });
-      this.logger.log('JWT key rotation: loaded current and previous signing keys');
+      this.keys.push({
+        kid: this.generateKid(previousSecret),
+        secret: previousSecret,
+      });
+      this.logger.log(
+        'JWT key rotation: loaded current and previous signing keys',
+      );
     } else {
       this.logger.log('JWT key rotation: loaded single signing key');
     }
@@ -99,6 +110,10 @@ export class JwtKeyRotationProvider {
    * The kid is the first 16 hex characters of the hash.
    */
   private generateKid(secret: string): string {
-    return crypto.createHash('sha256').update(secret).digest('hex').slice(0, 16);
+    return crypto
+      .createHash('sha256')
+      .update(secret)
+      .digest('hex')
+      .slice(0, 16);
   }
 }

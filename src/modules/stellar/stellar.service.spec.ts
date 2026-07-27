@@ -751,7 +751,8 @@ describe('StellarService', () => {
       amount: '2',
       asset: 'native',
       expiresIn: 3600,
-      recoveryAddress: 'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
+      recoveryAddress:
+        'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
       contractId: 'CONTRACT_ID_123',
       fundingKeypairSecret:
         'SCZANGBA5YHTNYVVV1J77DT4NK7WVIGZFFR3KDWZEQFEMFX65ZDFNEKX',
@@ -776,9 +777,7 @@ describe('StellarService', () => {
         status: 'SUCCESS',
         hash: 'INIT_HASH_456',
       });
-      jest
-        .spyOn(service, 'getCurrentLedger')
-        .mockResolvedValue(1000);
+      jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(1000);
     });
 
     it('returns a transaction hash on success', async () => {
@@ -819,8 +818,7 @@ describe('StellarService', () => {
       contractId: 'CONTRACT123',
       amount: 1000000n,
       assetAddress: 'CASSETTE_ADDR',
-      signerSecret:
-        'SCZANGBA5YHTNYVVV1J77DT4NK7WVIGZFFR3KDWZEQFEMFX65ZDFNEKX',
+      signerSecret: 'SCZANGBA5YHTNYVVV1J77DT4NK7WVIGZFFR3KDWZEQFEMFX65ZDFNEKX',
     };
 
     beforeEach(() => {
@@ -888,7 +886,8 @@ describe('StellarService', () => {
       // Mock Address.fromScVal to return a fake address string
       const originalFromScVal = StellarSdk.Address.fromScVal;
       StellarSdk.Address.fromScVal = jest.fn().mockReturnValue({
-        toString: () => 'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
+        toString: () =>
+          'GDEST47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA',
       });
 
       mockSimulateTransaction.mockResolvedValue({

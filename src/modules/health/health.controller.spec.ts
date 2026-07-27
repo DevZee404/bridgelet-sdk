@@ -11,11 +11,13 @@ async function buildModule(
 ): Promise<TestingModule> {
   const mockConfigService = {
     get: jest.fn().mockImplementation((key: string) => {
-      if (key === 'stellar.horizonUrl') return 'https://horizon-testnet.stellar.org';
+      if (key === 'stellar.horizonUrl')
+        return 'https://horizon-testnet.stellar.org';
       return undefined;
     }),
     getOrThrow: jest.fn().mockImplementation((key: string) => {
-      if (key === 'stellar.horizonUrl') return 'https://horizon-testnet.stellar.org';
+      if (key === 'stellar.horizonUrl')
+        return 'https://horizon-testnet.stellar.org';
       throw new Error(`Missing config: ${key}`);
     }),
   };
@@ -74,7 +76,10 @@ describe('HealthController', () => {
 
     it('reports horizon and soroban as ok', async () => {
       const result = await controller.check();
-      expect(result.services.horizon).toEqual({ healthy: true, url: 'https://horizon-testnet.stellar.org' });
+      expect(result.services.horizon).toEqual({
+        healthy: true,
+        url: 'https://horizon-testnet.stellar.org',
+      });
       expect(result.services.soroban).toBe('ok');
     });
   });

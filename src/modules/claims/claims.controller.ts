@@ -91,7 +91,9 @@ export class ClaimsController {
     status: 200,
     description: 'JSON Web Key Set with available signing keys',
   })
-  public getJwks(): { keys: Array<{ kid: string; kty: string; alg: string; use: string }> } {
+  public getJwks(): {
+    keys: Array<{ kid: string; kty: string; alg: string; use: string }>;
+  } {
     return this.jwtKeyRotation.getJwks();
   }
 }

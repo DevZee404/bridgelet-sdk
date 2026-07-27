@@ -12,15 +12,15 @@ All TypeORM database queries in `src/` were reviewed for SQL injection risk.
 
 ### Findings
 
-| File | Query Type | Parameterized? | Risk |
-|---|---|---|---|
-| `accounts/accounts.service.ts:210-218` | `createQueryBuilder` with `:status` binding | Yes | None |
-| `claims/providers/claim-lookup.provider.ts:19-22` | Repository `findOne({ where: { id } })` | Yes | None |
-| `claims/providers/claim-redemption.provider.ts:49-55,76-78,89-91` | Repository `findOne({ where: { ... } })` | Yes | None |
-| `claims/providers/token-verification.provider.ts:46-48` | Repository `findOne({ where: { claimTokenHash } })` | Yes | None |
-| `sweeps/providers/validation.provider.ts:37-39,107-109,128-130` | Repository `findOne({ where: { id } })` | Yes | None |
-| `stellar/providers/payment-monitor-provider.ts:122-124` | Repository `find({ where: { status } })` | Yes | None |
-| `database/migrations/*.ts` | Raw `queryRunner.query(...)` | Hardcoded SQL | None (migrations run at deploy time, no user input) |
+| File                                                              | Query Type                                          | Parameterized? | Risk                                                |
+| ----------------------------------------------------------------- | --------------------------------------------------- | -------------- | --------------------------------------------------- |
+| `accounts/accounts.service.ts:210-218`                            | `createQueryBuilder` with `:status` binding         | Yes            | None                                                |
+| `claims/providers/claim-lookup.provider.ts:19-22`                 | Repository `findOne({ where: { id } })`             | Yes            | None                                                |
+| `claims/providers/claim-redemption.provider.ts:49-55,76-78,89-91` | Repository `findOne({ where: { ... } })`            | Yes            | None                                                |
+| `claims/providers/token-verification.provider.ts:46-48`           | Repository `findOne({ where: { claimTokenHash } })` | Yes            | None                                                |
+| `sweeps/providers/validation.provider.ts:37-39,107-109,128-130`   | Repository `findOne({ where: { id } })`             | Yes            | None                                                |
+| `stellar/providers/payment-monitor-provider.ts:122-124`           | Repository `find({ where: { status } })`            | Yes            | None                                                |
+| `database/migrations/*.ts`                                        | Raw `queryRunner.query(...)`                        | Hardcoded SQL  | None (migrations run at deploy time, no user input) |
 
 ### Conclusion
 
@@ -42,17 +42,17 @@ All `this.logger.*` calls were reviewed for potential leakage of Stellar secret 
 
 ### Findings
 
-| File:Line | Logged Value | Severity | Action Taken |
-|---|---|---|---|
-| `stellar/stellar.service.ts:88` | `params.publicKey` | Low | Redacted to last 6 chars |
-| `stellar/stellar.service.ts:298` | `params.destination` | Medium | Redacted to last 6 chars |
-| `stellar/stellar.service.ts:326-328` | `params.contractId` | Low | No change (contract IDs are public) |
-| `stellar/providers/payment-monitor-provider.ts:62` | `account.publicKey` | Medium | Redacted to last 6 chars |
-| `stellar/providers/payment-monitor-provider.ts:152` | `record.from` | Medium | Redacted to last 6 chars |
-| `claims/providers/claim-redemption.provider.ts:39` | `destinationAddress` | Medium | Redacted to last 6 chars |
-| `sweeps/providers/transaction.provider.ts:54` | `params.destinationAddress` | Medium | Redacted to last 6 chars |
-| `sweeps/providers/transaction.provider.ts:109` | `JSON.stringify(extras)` | Medium | Replaced with generic error reference |
-| `claims/providers/token-verification.provider.ts:51` | `tokenHash` | Low | No change (hash, not token) |
+| File:Line                                            | Logged Value                | Severity | Action Taken                          |
+| ---------------------------------------------------- | --------------------------- | -------- | ------------------------------------- |
+| `stellar/stellar.service.ts:88`                      | `params.publicKey`          | Low      | Redacted to last 6 chars              |
+| `stellar/stellar.service.ts:298`                     | `params.destination`        | Medium   | Redacted to last 6 chars              |
+| `stellar/stellar.service.ts:326-328`                 | `params.contractId`         | Low      | No change (contract IDs are public)   |
+| `stellar/providers/payment-monitor-provider.ts:62`   | `account.publicKey`         | Medium   | Redacted to last 6 chars              |
+| `stellar/providers/payment-monitor-provider.ts:152`  | `record.from`               | Medium   | Redacted to last 6 chars              |
+| `claims/providers/claim-redemption.provider.ts:39`   | `destinationAddress`        | Medium   | Redacted to last 6 chars              |
+| `sweeps/providers/transaction.provider.ts:54`        | `params.destinationAddress` | Medium   | Redacted to last 6 chars              |
+| `sweeps/providers/transaction.provider.ts:109`       | `JSON.stringify(extras)`    | Medium   | Replaced with generic error reference |
+| `claims/providers/token-verification.provider.ts:51` | `tokenHash`                 | Low      | No change (hash, not token)           |
 
 ### Conclusion
 

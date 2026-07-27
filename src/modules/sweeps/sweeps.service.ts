@@ -254,7 +254,9 @@ export class SweepsService {
    * Returns transaction hash, confirmation status, and error details
    * suitable for the admin dashboard and sender notifications.
    */
-  public async getSweepById(accountId: string): Promise<SweepStatusResponseDto> {
+  public async getSweepById(
+    accountId: string,
+  ): Promise<SweepStatusResponseDto> {
     const account = await this.accountRepository.findOne({
       where: { id: accountId },
     });
@@ -316,7 +318,9 @@ export class SweepsService {
     let balances: Array<{ asset: string; amount: string }>;
     try {
       balances =
-        await this.transactionProvider.getAllAccountBalances(ephemeralPublicKey);
+        await this.transactionProvider.getAllAccountBalances(
+          ephemeralPublicKey,
+        );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
