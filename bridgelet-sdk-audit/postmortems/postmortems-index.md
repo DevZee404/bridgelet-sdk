@@ -5,5 +5,8 @@ This directory archives postmortems and lessons learned from past incidents invo
 - [Overlapping Payment Monitor Ticks](./overlapping-payment-monitor-ticks.md)
 - [Webhook vs Confirmation Ordering](./webhook-vs-confirmation-ordering.md)
 - [Tight Coupling in getAccountInfo() Parsing](./getinfo-parsing-coupling.md)
+- [ESLint Lint Script Scope](./eslint-lint-script-scope.md)
+- [No .prettierignore — Full Repository Scan](./no-prettierignore-full-repo-scan.md)
+- [Hand-Rolled i128 Bit-Splitting for Contract Calls](./i128-encoding-manual-implementation.md)
 
 Use the [Postmortem Template](./postmortem-template.md) to add new entries.
