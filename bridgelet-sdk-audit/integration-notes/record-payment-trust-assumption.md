@@ -41,6 +41,7 @@ transaction signer is the funding account, the ephemeral account holder, or any
 particular address.
 
 The contract only validates:
+
 - `amount > 0` (returns `InvalidAmount`)
 - The asset hasn't already been recorded (returns `DuplicateAsset`)
 - Payment count hasn't exceeded 10 (returns `TooManyPayments`)
@@ -54,10 +55,10 @@ it based on caller identity.
 
 ## 3. The Gap
 
-| Layer | Access Control | Enforcement |
-|-------|---------------|-------------|
-| **SDK** (`StellarService.recordPayment()`) | Requires `signerSecret` (funding account) | Self-imposed convention |
-| **Contract** (`EphemeralAccount::record_payment()`) | None — any caller can invoke | Not enforced on-chain |
+| Layer                                               | Access Control                            | Enforcement             |
+| --------------------------------------------------- | ----------------------------------------- | ----------------------- |
+| **SDK** (`StellarService.recordPayment()`)          | Requires `signerSecret` (funding account) | Self-imposed convention |
+| **Contract** (`EphemeralAccount::record_payment()`) | None — any caller can invoke              | Not enforced on-chain   |
 
 The SDK's signing requirement is a **self-imposed convention**, not an
 **on-chain guarantee**. Until the contract-side gap is closed, the security
@@ -90,7 +91,8 @@ application layer.
 
 ---
 
-*References:*
+_References:_
+
 - `src/modules/stellar/stellar.service.ts:233-292` — `recordPayment()` implementation
 - `bridgelet-audit/record-payment-unauthenticated-write.md` — postmortem (external)
 - `docs/FUTURE_CONTRACT_INTEGRATIONS.md` — related integration planning
