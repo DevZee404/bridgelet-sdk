@@ -9,5 +9,6 @@ This directory archives postmortems and lessons learned from past incidents invo
 - [No .prettierignore — Full Repository Scan](./no-prettierignore-full-repo-scan.md)
 - [Hand-Rolled i128 Bit-Splitting for Contract Calls](./i128-encoding-manual-implementation.md)
 - [The check-then-call race window in expireAccount()](./expire-account-race-window.md)
+- [Horizon-Soroban Non-Atomicity in Account Creation](./horizon-soroban-non-atomicity.md)
 
 Use the [Postmortem Template](./postmortem-template.md) to add new entries.
