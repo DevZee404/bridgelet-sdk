@@ -40,8 +40,8 @@ Re-run this checklist when any of the following occur:
 
 After each sweep, update the "last verified" date below. If a note is found stale, open a new postmortem issue in the audit repository and update or remove the `⚠️ MVP Note` comment in source.
 
-| MVP Note | Last Verified | Status |
-| --- | --- | --- |
-| Horizon-Soroban Non-Atomicity | | |
-| Token Transfer Completeness | | |
-| Fund Recovery Completeness | | |
+| MVP Note                      | Last Verified | Status |
+| ----------------------------- | ------------- | ------ |
+| Horizon-Soroban Non-Atomicity |               |        |
+| Token Transfer Completeness   |               |        |
+| Fund Recovery Completeness    |               |        |

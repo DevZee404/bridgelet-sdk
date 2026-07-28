@@ -104,10 +104,10 @@ static buildMessage(
 
 The message format is therefore:
 
-| Field | Encoding | Source |
-|-------|----------|--------|
-| Destination address | XDR-encoded ScVal (AccountId) | `Address.fromString(destination).toScVal().toXDR()` |
-| Nonce | 8-byte big-endian u64 | `params.nonce` (defaults to `0n`) |
+| Field                       | Encoding                       | Source                                                            |
+| --------------------------- | ------------------------------ | ----------------------------------------------------------------- |
+| Destination address         | XDR-encoded ScVal (AccountId)  | `Address.fromString(destination).toScVal().toXDR()`               |
+| Nonce                       | 8-byte big-endian u64          | `params.nonce` (defaults to `0n`)                                 |
 | SweepController contract ID | XDR-encoded ScVal (ContractId) | `Address.fromString(sweepControllerContractId).toScVal().toXDR()` |
 
 This must stay in sync with `bridgelet-core/contracts/sweep_controller/src/authorization.rs::construct_sweep_message()`.
@@ -132,6 +132,7 @@ contract.call(
 ```
 
 The on-chain contract will:
+
 1. Read its current `nonce` from instance storage.
 2. Reconstruct the same SHA256 message.
 3. Verify the Ed25519 signature against the registered `authorized_signer`.

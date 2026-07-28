@@ -17,12 +17,10 @@ The relevant source snippet:
 ```typescript
 contract.call(
   'execute_sweep',
-  StellarSdk.Address.fromString(
-    params.ephemeralAccountContractId,
-  ).toScVal(),
+  StellarSdk.Address.fromString(params.ephemeralAccountContractId).toScVal(),
   StellarSdk.Address.fromString(params.destination).toScVal(),
   StellarSdk.xdr.ScVal.scvBytes(params.authSignature),
-)
+);
 ```
 
 ## bridgelet-core Signature Verification
@@ -40,11 +38,11 @@ fn execute_sweep(
 
 Parameter details:
 
-| Position | Name | Type |
-|----------|------|------|
-| 1 | `ephemeral_account` | `Address` |
-| 2 | `destination` | `Address` |
-| 3 | `auth_signature` | `BytesN<64>` |
+| Position | Name                | Type         |
+| -------- | ------------------- | ------------ |
+| 1        | `ephemeral_account` | `Address`    |
+| 2        | `destination`       | `Address`    |
+| 3        | `auth_signature`    | `BytesN<64>` |
 
 The SDK's argument order and types match bridgelet-core's `execute_sweep` signature as of this writing:
 
