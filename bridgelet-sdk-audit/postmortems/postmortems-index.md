@@ -10,5 +10,6 @@ This directory archives postmortems and lessons learned from past incidents invo
 - [Hand-Rolled i128 Bit-Splitting for Contract Calls](./i128-encoding-manual-implementation.md)
 - [The check-then-call race window in expireAccount()](./expire-account-race-window.md)
 - [Horizon-Soroban Non-Atomicity in Account Creation](./horizon-soroban-non-atomicity.md)
+- [waitForTransaction()'s Fixed ~20-Second Confirmation Window](./fixed-transaction-polling-window.md)
 
 Use the [Postmortem Template](./postmortem-template.md) to add new entries.
