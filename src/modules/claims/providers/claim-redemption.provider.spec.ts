@@ -214,6 +214,23 @@ describe('ClaimRedemptionProvider', () => {
       });
     });
 
+    it('should trigger sweep.completed webhook event on successful redemption', async () => {
+      await provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION);
+
+      expect(mockWebhooksService.triggerEvent).toHaveBeenCalledWith(
+        'sweep.completed',
+        expect.objectContaining({
+          accountId: mockAccount.id,
+          amount: mockAccount.amount,
+          asset: mockAccount.asset,
+          destination: VALID_DESTINATION,
+          txHash: mockSweepResult.txHash,
+          sweptAt: mockClaim.claimedAt,
+          metadata: mockAccount.metadata,
+        }),
+      );
+    });
+
     it('should acquire SELECT FOR UPDATE lock before setting status to CLAIMING', async () => {
       // Rebuild with a spy-able dataSource so we can inspect the qb inside the callback
       const ds = makeHappyPathDataSource();
@@ -370,6 +387,30 @@ describe('ClaimRedemptionProvider', () => {
       await expect(
         p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
       ).rejects.toThrow('Stellar network error');
+    });
+
+    it('should trigger sweep.failed webhook event when sweep fails', async () => {
+      const ds = makeHappyPathDataSource();
+      const p = await buildModule(ds);
+      mockSweepsService.executeSweep.mockRejectedValue(
+        new Error('Stellar network error'),
+      );
+
+      await expect(
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow('Stellar network error');
+
+      expect(mockWebhooksService.triggerEvent).toHaveBeenCalledWith(
+        'sweep.failed',
+        expect.objectContaining({
+          accountId: mockAccount.id,
+          amount: mockAccount.amount,
+          asset: mockAccount.asset,
+          destination: VALID_DESTINATION,
+          error: 'Stellar network error',
+          timestamp: expect.any(Date),
+        }),
+      );
     });
   });
 
