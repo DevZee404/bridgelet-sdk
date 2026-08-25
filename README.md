@@ -20,17 +20,7 @@ The Bridgelet SDK is a NestJS-based backend service that manages the lifecycle o
 
 The following services/imports are currently **commented out** to allow `npm run start:dev` to run without errors. These are **NOT removed** and **MUST be restored** once proper implementations exist.
 
-### Missing Services:
-
-1. **WebhooksService** (referenced in `src/modules/claims/providers/claim-redemption.provider.ts`)
-   - **Location:** `src/modules/webhooks/` (does not exist yet)
-   - **What was commented out:**
-     - Constructor dependency injection (line ~25)
-     - Webhook trigger for `sweep.completed` event (line ~106)
-     - Webhook trigger for `sweep.failed` event (line ~137)
-   - **Why:** Service implementation does not exist, causing TypeScript compilation errors
-   - **Impact:** Webhook notifications will NOT fire when claims are redeemed or when sweeps fail
-   - **Restoration required:** Once `WebhooksService` is implemented in `src/modules/webhooks/`, uncomment all marked sections
+### Temporary Development Notes:
 
 ### How to Find Temporary Changes:
 
