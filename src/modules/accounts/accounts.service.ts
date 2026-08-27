@@ -149,6 +149,27 @@ export class AccountsService {
     return this.mapToResponseDto(account);
   }
 
+  /**
+   * Admin/audit lookup that includes soft-deleted accounts (issue #461).
+   *
+   * The default {@link findOne} path excludes soft-deleted rows (TypeORM adds
+   * `deletedAt IS NULL` automatically because `deletedAt` is a
+   * `@DeleteDateColumn`). This method explicitly opts back in so auditing and
+   * compliance tooling can inspect historical/removed accounts.
+   */
+  public async findOneWithDeleted(id: string): Promise<AccountResponseDto> {
+    const account = await this.accountsRepository.findOne({
+      where: { id },
+      withDeleted: true,
+    });
+
+    if (!account) {
+      throw new NotFoundException(`Account ${id} not found`);
+    }
+
+    return this.mapToResponseDto(account);
+  }
+
   public async findAll({
     status,
     limit,

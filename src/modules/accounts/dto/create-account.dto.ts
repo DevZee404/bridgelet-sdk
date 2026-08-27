@@ -83,7 +83,15 @@ export class CreateAccountDto {
   @Max(2592000) // 30 days
   expiresIn: number;
 
-  @ApiProperty({ example: { userId: 'user_123' }, required: false })
+  @ApiProperty({
+    example: { userId: 'user_123' },
+    required: false,
+    description:
+      'Optional JSON object metadata. Must be a plain JSON object and ' +
+      'serialise to at most 4 KB (4096 bytes). Any top-level keys matching ' +
+      'known PII identifiers (email, phone, name, address, SSN, etc.) are ' +
+      'stripped before storage. See issue #462.',
+  })
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;

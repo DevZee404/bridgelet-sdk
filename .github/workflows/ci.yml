@@ -38,3 +38,23 @@ jobs:
 
       - name: Build Verification
         run: npm run build
+
+      - name: 'Audit TEMPORARY: comments have a linked issue (issue #458)'
+        # Every TEMPORARY comment must reference a GitHub issue so temporary
+        # workarounds never silently become permanent. Any future TEMPORARY
+        # comment without "(issue #NNN)" fails the build.
+        run: |
+          set -euo pipefail
+          matches=$(rg -n "TEMPORARY:" --glob '!node_modules' --glob '!dist' \
+            --glob '!coverage' --glob '!package-lock.json' . || true)
+          if [[ -z "$matches" ]]; then
+            echo "No TEMPORARY: comments found — OK."
+            exit 0
+          fi
+          echo "Found TEMPORARY: comment(s):"
+          echo "$matches"
+          if ! echo "$matches" | rg -q "\(issue #[0-9]+\)"; then
+            echo "::error::Every TEMPORARY: comment must reference a GitHub issue, e.g. 'TEMPORARY: <desc> (issue #123)'. See issue #458."
+            exit 1
+          fi
+          echo "All TEMPORARY: comments reference a linked issue — OK."

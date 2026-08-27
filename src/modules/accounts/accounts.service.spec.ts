@@ -229,6 +229,47 @@ describe('AccountsService', () => {
 
       expect(result.claimUrl).toContain('***');
     });
+
+    it('excludes soft-deleted accounts by default (no withDeleted flag)', async () => {
+      mockRepo.findOne.mockResolvedValue(makeAccount({ id: 'uuid-1' }));
+
+      await service.findOne('uuid-1');
+
+      expect(mockRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'uuid-1' },
+      });
+      expect(mockRepo.findOne).not.toHaveBeenCalledWith(
+        expect.objectContaining({ withDeleted: true }),
+      );
+    });
+  });
+
+  // ─── findOneWithDeleted (soft-delete admin/audit lookup, issue #461) ─────
+
+  describe('findOneWithDeleted', () => {
+    it('returns a soft-deleted account when explicitly requested', async () => {
+      const softDeleted = makeAccount({
+        id: 'uuid-deleted',
+        deletedAt: new Date(),
+      });
+      mockRepo.findOne.mockResolvedValue(softDeleted);
+
+      const result = await service.findOneWithDeleted('uuid-deleted');
+
+      expect(mockRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'uuid-deleted' },
+        withDeleted: true,
+      });
+      expect(result.accountId).toBe('uuid-deleted');
+    });
+
+    it('throws NotFoundException when no account exists (deleted or not)', async () => {
+      mockRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.findOneWithDeleted('missing')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 
   // ─── findAll ─────────────────────────────────────────────────────────────

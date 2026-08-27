@@ -167,6 +167,15 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     await Promise.allSettled(
       accounts.map((account) => this.markInitializingFailed(account)),
     );
+
+    // Operational alert (issue #463): surfaces stuck-INITIALIZING accounts at
+    // error level so monitoring can react if the cleanup persistently finds
+    // orphaned off-chain accounts (a sign of an upstream creation problem).
+    this.logger.error(
+      `ALERT: ${accounts.length} account(s) stuck in INITIALIZING past the ` +
+        `timeout were marked FAILED (initialization_timeout). If this count is ` +
+        `consistently non-zero, investigate the account-creation path. (issue #463)`,
+    );
   }
 
   private async markInitializingFailed(account: Account): Promise<void> {
