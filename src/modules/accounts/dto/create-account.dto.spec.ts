@@ -183,3 +183,45 @@ describe('CreateAccountDto — asset_issuer', () => {
     expect(errors).not.toContain('asset_issuer');
   });
 });
+
+// ─── expiresIn ────────────────────────────────────────────────────────────────
+
+describe('CreateAccountDto — expiresIn bounds', () => {
+  it('accepts an expiry within the allowed range', async () => {
+    const errors = await errorsFor({ expiresIn: 3600 });
+    expect(errors).not.toContain('expiresIn');
+  });
+
+  it('rejects an expiry below the one-hour minimum', async () => {
+    const errors = await errorsFor({ expiresIn: 3599 });
+    expect(errors).toContain('expiresIn');
+  });
+
+  it('rejects an expiry above the 30-day maximum', async () => {
+    const errors = await errorsFor({ expiresIn: 2592001 });
+    expect(errors).toContain('expiresIn');
+  });
+});
+
+// ─── metadata ─────────────────────────────────────────────────────────────────
+
+describe('CreateAccountDto — metadata size limit', () => {
+  it('accepts small metadata objects', async () => {
+    const errors = await errorsFor({
+      metadata: { userId: 'user_123', reference: 'order_456' },
+    });
+    expect(errors).not.toContain('metadata');
+  });
+
+  it('rejects metadata whose serialised size exceeds the limit', async () => {
+    const errors = await errorsFor({
+      metadata: { payload: 'x'.repeat(5000) },
+    });
+    expect(errors).toContain('metadata');
+  });
+
+  it('rejects non-object metadata', async () => {
+    const errors = await errorsFor({ metadata: 'not-an-object' });
+    expect(errors).toContain('metadata');
+  });
+});
