@@ -1067,41 +1067,41 @@ describe('StellarService', () => {
         const sorobanAccount = new StellarSdk.Account(
           FUNDING_KEYPAIR.publicKey(),
           '101',
-      );
-      sorobanServer.getAccount.mockResolvedValue(sorobanAccount);
-      sorobanServer.prepareTransaction.mockImplementation((tx: any) =>
-        Promise.resolve(tx),
-      );
+        );
+        sorobanServer.getAccount.mockResolvedValue(sorobanAccount);
+        sorobanServer.prepareTransaction.mockImplementation((tx: any) =>
+          Promise.resolve(tx),
+        );
 
-      // First call: timeout; second call: success
-      sorobanServer.sendTransaction
-        .mockRejectedValueOnce(new Error('Request timed out after 30000ms'))
-        .mockResolvedValueOnce({
-          status: 'PENDING',
-          hash: 'retry-hash',
+        // First call: timeout; second call: success
+        sorobanServer.sendTransaction
+          .mockRejectedValueOnce(new Error('Request timed out after 30000ms'))
+          .mockResolvedValueOnce({
+            status: 'PENDING',
+            hash: 'retry-hash',
+          });
+        sorobanServer.getTransaction.mockResolvedValue({
+          status: SorobanRpc.Api.GetTransactionStatus.SUCCESS,
         });
-      sorobanServer.getTransaction.mockResolvedValue({
-        status: SorobanRpc.Api.GetTransactionStatus.SUCCESS,
-      });
-      jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(1000);
+        jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(1000);
 
-      const promise = service.createEphemeralAccount({
-        publicKey: FUNDING_KEYPAIR.publicKey(),
-        amount: '100',
-        asset: 'native',
-        expiresIn: 3600,
-        recoveryAddress: FUNDING_KEYPAIR.publicKey(),
-        contractId: CONTRACT_ID,
-        sweepControllerContractId: CONTRACT_ID,
-        fundingKeypairSecret: FUNDING_SECRET,
-      });
+        const promise = service.createEphemeralAccount({
+          publicKey: FUNDING_KEYPAIR.publicKey(),
+          amount: '100',
+          asset: 'native',
+          expiresIn: 3600,
+          recoveryAddress: FUNDING_KEYPAIR.publicKey(),
+          contractId: CONTRACT_ID,
+          sweepControllerContractId: CONTRACT_ID,
+          fundingKeypairSecret: FUNDING_SECRET,
+        });
 
-      // Advance past the 500ms backoff
-      await jest.advanceTimersByTimeAsync(600);
+        // Advance past the 500ms backoff
+        await jest.advanceTimersByTimeAsync(600);
 
-      const hash = await promise;
-      expect(hash).toBe('tx');
-      expect(sorobanServer.sendTransaction).toHaveBeenCalledTimes(2);
+        const hash = await promise;
+        expect(hash).toBe('tx');
+        expect(sorobanServer.sendTransaction).toHaveBeenCalledTimes(2);
       } finally {
         jest.useRealTimers();
       }

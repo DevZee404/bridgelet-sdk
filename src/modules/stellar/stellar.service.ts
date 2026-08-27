@@ -612,9 +612,8 @@ export class StellarService {
     const endTimer = this.sorobanRpcLatency.startTimer();
     let result: SorobanRpc.Api.SendTransactionResponse;
     try {
-      result = await this.retrySorobanRpc(
-        'sendTransaction(expire)',
-        () => this.sorobanServer.sendTransaction(preparedTx),
+      result = await this.retrySorobanRpc('sendTransaction(expire)', () =>
+        this.sorobanServer.sendTransaction(preparedTx),
       );
     } finally {
       endTimer();
