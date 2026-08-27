@@ -23,6 +23,8 @@
     "test:local-sandbox": "jest --config ./test/jest-e2e.json test/accounts-local-sandbox.e2e-spec.ts",
     "load:accounts": "npx artillery run load-tests/accounts-create-burst.yml",
     "load:accounts:seed": "ts-node --esm scripts/seed-load-test-integrators.ts",
+    "load:claims": "npx artillery run load-tests/claims-redeem-burst.yml",
+    "load:claims:seed": "ts-node --esm scripts/seed-load-test-claims.ts",
     "typeorm": "typeorm-ts-node-esm",
     "migration:generate": "npm run typeorm -- migration:generate",
     "migration:create": "npm run typeorm -- migration:create",

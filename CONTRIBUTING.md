@@ -223,6 +223,8 @@ When you open a PR, our CI will automatically run:
 4. Run `./scripts/generate-migrations.sh --yes` and confirm `git diff` is empty — that's your proof the script and the folder agree.
 5. Update the migration list in [`README.md`](./README.md#installation) to include the new file.
 
+> **CI enforcement:** a `migration-drift` job in [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs `./scripts/generate-migrations.sh --yes` against a fresh checkout and fails the build if `src/database/migrations/` does not match the script's output. New migrations must be added to the script — never hand-created in the folder — or this check will fail.
+
 ### Notes on timestamps
 
 TypeORM orders migrations by the numeric timestamp in the filename, falling back to filename string comparison when timestamps tie. A few existing migrations (`1718100008000-*`) share a timestamp; their run order is preserved by the script exactly as it exists today (alphabetical: `AddDeletedAtToAccountsTable`, `AddPartialSweepToAccountStatus`, `CreateClaimAuditLogTable`). **Do not renumber existing migration timestamps** — any environment that already recorded these migration names in its `migrations` table would try to re-run them under new names. Give new migrations their own, later timestamp instead.
