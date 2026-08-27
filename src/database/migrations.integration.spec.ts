@@ -10,6 +10,13 @@ type MigrationCheckResult = {
   foreignKeyColumns: string[][];
   foreignKeyRejected: boolean;
   schemaInSync: boolean;
+  deliveryForeignKeyColumns: string[][];
+  deliveryForeignKeyRejected: boolean;
+  deliveryIndexes: string[][];
+  contractEventColumns: string[];
+  contractEventInsertSucceeded: boolean;
+  highTrafficIndexes: string[];
+  claimAuditLogIndexes: string[];
 };
 
 describe('Database migrations integration', () => {
@@ -49,6 +56,28 @@ describe('Database migrations integration', () => {
         enumValues: Object.values(AccountStatus),
         foreignKeyColumns: [['accountId']],
         foreignKeyRejected: true,
+        deliveryForeignKeyColumns: [['subscription_id']],
+        deliveryForeignKeyRejected: true,
+        deliveryIndexes: [['subscription_id', 'created_at']],
+        contractEventColumns: [
+          'id',
+          'event_type',
+          'contract_address',
+          'ledger_sequence',
+          'tx_hash',
+          'payload',
+          'created_at',
+        ],
+        contractEventInsertSucceeded: true,
+        highTrafficIndexes: [
+          'IDX_accounts_status_expiresAt',
+          'IDX_accounts_status_createdAt',
+          'IDX_accounts_createdAt',
+        ],
+        claimAuditLogIndexes: [
+          'IDX_claim_audit_log_accountId',
+          'IDX_claim_audit_log_attemptedAt',
+        ],
       };
     }
   });
@@ -59,5 +88,50 @@ describe('Database migrations integration', () => {
     expect(result.enumValues).toEqual(Object.values(AccountStatus));
     expect(result.foreignKeyColumns).toContainEqual(['accountId']);
     expect(result.foreignKeyRejected).toBe(true);
+  });
+
+  it('webhook_deliveries table has an enforced foreign key and composite index', () => {
+    expect(result.deliveryForeignKeyColumns).toContainEqual([
+      'subscription_id',
+    ]);
+    expect(result.deliveryForeignKeyRejected).toBe(true);
+    expect(result.deliveryIndexes).toContainEqual([
+      'subscription_id',
+      'created_at',
+    ]);
+  });
+
+  it('contract_events table persists inserts with expected columns', () => {
+    expect(result.contractEventInsertSucceeded).toBe(true);
+    expect(result.contractEventColumns).toEqual(
+      expect.arrayContaining([
+        'id',
+        'event_type',
+        'contract_address',
+        'ledger_sequence',
+        'tx_hash',
+        'payload',
+        'created_at',
+      ]),
+    );
+  });
+
+  it('claim_audit_log table has the expected operational indexes', () => {
+    expect(result.claimAuditLogIndexes).toContainEqual(
+      'IDX_claim_audit_log_accountId',
+    );
+    expect(result.claimAuditLogIndexes).toContainEqual(
+      'IDX_claim_audit_log_attemptedAt',
+    );
+  });
+
+  it('high-traffic accounts indexes are present in the applied schema', () => {
+    expect(result.highTrafficIndexes).toContainEqual(
+      'IDX_accounts_status_expiresAt',
+    );
+    expect(result.highTrafficIndexes).toContainEqual(
+      'IDX_accounts_status_createdAt',
+    );
+    expect(result.highTrafficIndexes).toContainEqual('IDX_accounts_createdAt');
   });
 });
