@@ -15,6 +15,7 @@ export class UpdateWebhookDto {
     required: false,
     example: [
       WebhookEvent.SweepCompleted,
+      WebhookEvent.SweepPartial,
       WebhookEvent.SweepFailed,
       WebhookEvent.AccountCreated,
       WebhookEvent.AccountExpired,

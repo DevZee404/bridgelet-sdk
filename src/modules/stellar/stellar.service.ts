@@ -17,6 +17,18 @@ export const EXPIRY_BUFFER_LEDGERS = 10;
  */
 export const LEDGER_CACHE_TTL_MS = 5_000;
 
+/**
+ * Maximum number of times to retry a transient Soroban RPC call
+ * (timeout, network error, 5xx) before propagating the error.
+ */
+export const SOROBAN_RPC_MAX_RETRIES = 3;
+
+/**
+ * Initial backoff delay in milliseconds for Soroban RPC retries.
+ * Each subsequent attempt doubles the delay, capped at 2 s.
+ */
+export const SOROBAN_RPC_INITIAL_BACKOFF_MS = 500;
+
 @Injectable()
 export class StellarService {
   private readonly logger = new Logger(StellarService.name);
@@ -163,6 +175,79 @@ export class StellarService {
   }
 
   /**
+   * Determines whether an error represents a transient RPC failure
+   * (timeout, network-level, or HTTP 5xx) as opposed to a contract-level
+   * logic rejection that should not be retried.
+   *
+   * Transient errors are safe to retry with backoff. Contract errors
+   * (e.g. InvalidAmount, AlreadySwept) are deterministic and will always
+   * fail if retried.
+   */
+  private isTransientRpcError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+
+    const message = error.message.toLowerCase();
+    const transientPatterns = [
+      'timeout',
+      'timed out',
+      'econnrefused',
+      'econnreset',
+      'econnaborted',
+      'enotfound',
+      'network',
+      'socket hang up',
+      'fetch failed',
+      'request failed',
+      '502',
+      '503',
+      '504',
+    ];
+    return transientPatterns.some((pattern) => message.includes(pattern));
+  }
+
+  /**
+   * Wraps a Soroban RPC call with retry logic and exponential backoff.
+   * Transient errors (timeouts, network failures, 5xx) are retried up to
+   * {@link SOROBAN_RPC_MAX_RETRIES} times. Contract-level errors and other
+   * non-transient errors are propagated immediately.
+   *
+   * @param label   Human-readable label for log messages (e.g. "sendTransaction")
+   * @param fn      The RPC call to execute
+   * @param retries Max retry attempts (defaults to {@link SOROBAN_RPC_MAX_RETRIES})
+   * @returns The result of fn()
+   */
+  private async retrySorobanRpc<T>(
+    label: string,
+    fn: () => Promise<T>,
+    retries = SOROBAN_RPC_MAX_RETRIES,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        return await fn();
+      } catch (error: unknown) {
+        lastError = error;
+
+        if (!this.isTransientRpcError(error) || attempt >= retries) {
+          throw error;
+        }
+
+        const backoffMs = Math.min(
+          SOROBAN_RPC_INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1),
+          2000,
+        );
+        this.logger.warn(
+          `${label} attempt ${attempt}/${retries} failed (transient): ` +
+            `${error instanceof Error ? error.message : String(error)}. ` +
+            `Retrying in ${backoffMs}ms…`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
+    }
+    throw lastError;
+  }
+
+  /**
    * Converts a seconds-based expiry duration to a Stellar ledger sequence number.
    * Adds a small buffer (10 ledgers) to account for submission latency.
    */
@@ -268,7 +353,10 @@ export class StellarService {
     const endTimer = this.sorobanRpcLatency.startTimer();
     let initResult: SorobanRpc.Api.SendTransactionResponse;
     try {
-      initResult = await this.sorobanServer.sendTransaction(preparedTx);
+      initResult = await this.retrySorobanRpc(
+        'sendTransaction(initialize)',
+        () => this.sorobanServer.sendTransaction(preparedTx),
+      );
     } finally {
       endTimer();
     }
@@ -345,7 +433,10 @@ export class StellarService {
     const endTimer = this.sorobanRpcLatency.startTimer();
     let result: SorobanRpc.Api.SendTransactionResponse;
     try {
-      result = await this.sorobanServer.sendTransaction(preparedTx);
+      result = await this.retrySorobanRpc(
+        'sendTransaction(record_payment)',
+        () => this.sorobanServer.sendTransaction(preparedTx),
+      );
     } finally {
       endTimer();
     }
@@ -421,13 +512,16 @@ export class StellarService {
     const endTimer = this.sorobanRpcLatency.startTimer();
     let result: SorobanRpc.Api.SendTransactionResponse;
     try {
-      result = await this.sorobanServer.sendTransaction(preparedTx);
+      result = await this.retrySorobanRpc(
+        'sendTransaction(execute_sweep)',
+        () => this.sorobanServer.sendTransaction(preparedTx),
+      );
     } catch (error) {
       endTimer();
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `sendTransaction timed out or failed for ${params.ephemeralAccountContractId}: ${message}. ` +
-          'Checking transaction status before retrying.',
+        `sendTransaction failed for ${params.ephemeralAccountContractId} after retries: ${message}. ` +
+          'Checking transaction status before propagating.',
       );
       // The transaction may or may not have landed. Check status by polling.
       const statusCheck = await this.checkTransactionStatusAfterTimeout(
@@ -518,7 +612,10 @@ export class StellarService {
     const endTimer = this.sorobanRpcLatency.startTimer();
     let result: SorobanRpc.Api.SendTransactionResponse;
     try {
-      result = await this.sorobanServer.sendTransaction(preparedTx);
+      result = await this.retrySorobanRpc(
+        'sendTransaction(expire)',
+        () => this.sorobanServer.sendTransaction(preparedTx),
+      );
     } finally {
       endTimer();
     }
@@ -564,7 +661,10 @@ export class StellarService {
     const endTimer = this.sorobanRpcLatency.startTimer();
     let simResult: SorobanRpc.Api.SimulateTransactionResponse;
     try {
-      simResult = await this.sorobanServer.simulateTransaction(transaction);
+      simResult = await this.retrySorobanRpc(
+        'simulateTransaction(get_info)',
+        () => this.sorobanServer.simulateTransaction(transaction),
+      );
     } finally {
       endTimer();
     }
@@ -621,6 +721,17 @@ export class StellarService {
       let status: SorobanRpc.Api.GetTransactionResponse;
       try {
         status = await this.sorobanServer.getTransaction(txHash);
+      } catch (error: unknown) {
+        endTimer();
+        if (this.isTransientRpcError(error)) {
+          this.logger.warn(
+            `getTransaction transient error (attempt ${i + 1}/${maxAttempts}) for ${txHash}: ` +
+              `${error instanceof Error ? error.message : String(error)}. Retrying…`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          continue;
+        }
+        throw error;
       } finally {
         endTimer();
       }

@@ -6,6 +6,8 @@ import {
   StellarService,
   EXPIRY_BUFFER_LEDGERS,
   LEDGER_CACHE_TTL_MS,
+  SOROBAN_RPC_MAX_RETRIES,
+  SOROBAN_RPC_INITIAL_BACKOFF_MS,
 } from './stellar.service.js';
 import { getToken } from '@willsoto/nestjs-prometheus';
 
@@ -952,6 +954,222 @@ describe('StellarService', () => {
       await expect(service.getAccountInfo(CONTRACT_ID)).rejects.toThrow(
         'get_info returned no value',
       );
+    });
+  });
+
+  // ── Soroban RPC retry behaviour ────────────────────────────────────────────
+
+  describe('retrySorobanRpc (private helper)', () => {
+    it('retries on transient errors and eventually succeeds', async () => {
+      // Access the private helper via (service as any)
+      const retry = (service as any).retrySorobanRpc.bind(service);
+
+      let attempt = 0;
+      const fn = jest.fn(async () => {
+        attempt++;
+        if (attempt === 1) throw new Error('Request timed out after 30000ms');
+        return 'success';
+      });
+
+      const result = await retry('test', fn, 3);
+      expect(result).toBe('success');
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries on 5xx errors and throws after exhausting retries', async () => {
+      const retry = (service as any).retrySorobanRpc.bind(service);
+
+      const fn = jest.fn(async () => {
+        throw new Error('HTTP 503 Service Unavailable');
+      });
+
+      await expect(retry('test', fn, 3)).rejects.toThrow('HTTP 503');
+      expect(fn).toHaveBeenCalledTimes(3);
+    });
+
+    it('does NOT retry on contract-level (non-transient) errors', async () => {
+      const retry = (service as any).retrySorobanRpc.bind(service);
+
+      const fn = jest.fn(async () => {
+        throw new Error('AlreadySwept');
+      });
+
+      await expect(retry('test', fn, 3)).rejects.toThrow('AlreadySwept');
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT retry on errors without matching transient patterns', async () => {
+      const retry = (service as any).retrySorobanRpc.bind(service);
+
+      const fn = jest.fn(async () => {
+        throw new Error('Something weird happened');
+      });
+
+      await expect(retry('test', fn, 3)).rejects.toThrow(
+        'Something weird happened',
+      );
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('isTransientRpcError (private helper)', () => {
+    it('returns true for timeout errors', () => {
+      const check = (service as any).isTransientRpcError.bind(service);
+      expect(check(new Error('Request timed out'))).toBe(true);
+      expect(check(new Error('Request timed out after 30000ms'))).toBe(true);
+    });
+
+    it('returns true for network errors', () => {
+      const check = (service as any).isTransientRpcError.bind(service);
+      expect(check(new Error('connect ECONNREFUSED 127.0.0.1:8000'))).toBe(
+        true,
+      );
+      expect(check(new Error('socket hang up'))).toBe(true);
+      expect(check(new Error('ECONNRESET'))).toBe(true);
+    });
+
+    it('returns true for HTTP 5xx errors', () => {
+      const check = (service as any).isTransientRpcError.bind(service);
+      expect(check(new Error('HTTP 503 Service Unavailable'))).toBe(true);
+      expect(check(new Error('HTTP 502 Bad Gateway'))).toBe(true);
+      expect(check(new Error('HTTP 504 Gateway Timeout'))).toBe(true);
+    });
+
+    it('returns false for contract-level errors', () => {
+      const check = (service as any).isTransientRpcError.bind(service);
+      expect(check(new Error('AlreadySwept'))).toBe(false);
+      expect(check(new Error('AccountExpired'))).toBe(false);
+      expect(check(new Error('DuplicateAsset'))).toBe(false);
+    });
+
+    it('returns false for non-Error values', () => {
+      const check = (service as any).isTransientRpcError.bind(service);
+      expect(check(null)).toBe(false);
+      expect(check('string error')).toBe(false);
+      expect(check(42)).toBe(false);
+    });
+  });
+
+  describe('Soroban RPC retry integration (real timers)', () => {
+    // These tests use real timers with short backoffs to verify the retry
+    // logic integrates correctly with the full service methods.
+
+    it('retries sendTransaction on timeout and succeeds via createEphemeralAccount', async () => {
+      jest.useFakeTimers();
+      try {
+        const fundingAccount = new StellarSdk.Account(
+          FUNDING_KEYPAIR.publicKey(),
+          '100',
+        );
+        horizonServer.loadAccount.mockResolvedValue(fundingAccount);
+        horizonServer.submitTransaction.mockResolvedValue({ hash: 'tx' });
+
+        const sorobanAccount = new StellarSdk.Account(
+          FUNDING_KEYPAIR.publicKey(),
+          '101',
+      );
+      sorobanServer.getAccount.mockResolvedValue(sorobanAccount);
+      sorobanServer.prepareTransaction.mockImplementation((tx: any) =>
+        Promise.resolve(tx),
+      );
+
+      // First call: timeout; second call: success
+      sorobanServer.sendTransaction
+        .mockRejectedValueOnce(new Error('Request timed out after 30000ms'))
+        .mockResolvedValueOnce({
+          status: 'PENDING',
+          hash: 'retry-hash',
+        });
+      sorobanServer.getTransaction.mockResolvedValue({
+        status: SorobanRpc.Api.GetTransactionStatus.SUCCESS,
+      });
+      jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(1000);
+
+      const promise = service.createEphemeralAccount({
+        publicKey: FUNDING_KEYPAIR.publicKey(),
+        amount: '100',
+        asset: 'native',
+        expiresIn: 3600,
+        recoveryAddress: FUNDING_KEYPAIR.publicKey(),
+        contractId: CONTRACT_ID,
+        sweepControllerContractId: CONTRACT_ID,
+        fundingKeypairSecret: FUNDING_SECRET,
+      });
+
+      // Advance past the 500ms backoff
+      await jest.advanceTimersByTimeAsync(600);
+
+      const hash = await promise;
+      expect(hash).toBe('tx');
+      expect(sorobanServer.sendTransaction).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('retries waitForTransaction on transient RPC error within polling loop', async () => {
+      jest.useFakeTimers();
+      try {
+        const fundingAccount = new StellarSdk.Account(
+          FUNDING_KEYPAIR.publicKey(),
+          '100',
+        );
+        horizonServer.loadAccount.mockResolvedValue(fundingAccount);
+        horizonServer.submitTransaction.mockResolvedValue({ hash: 'tx' });
+
+        const sorobanAccount = new StellarSdk.Account(
+          FUNDING_KEYPAIR.publicKey(),
+          '101',
+        );
+        sorobanServer.getAccount.mockResolvedValue(sorobanAccount);
+        sorobanServer.prepareTransaction.mockImplementation((tx: any) =>
+          Promise.resolve(tx),
+        );
+        sorobanServer.sendTransaction.mockResolvedValue({
+          status: 'PENDING',
+          hash: 'poll-hash',
+        });
+
+        // First getTransaction: transient error; second: SUCCESS
+        sorobanServer.getTransaction
+          .mockRejectedValueOnce(new Error('ECONNRESET'))
+          .mockResolvedValueOnce({
+            status: SorobanRpc.Api.GetTransactionStatus.SUCCESS,
+          });
+        jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(1000);
+
+        const promise = service.createEphemeralAccount({
+          publicKey: FUNDING_KEYPAIR.publicKey(),
+          amount: '100',
+          asset: 'native',
+          expiresIn: 3600,
+          recoveryAddress: FUNDING_KEYPAIR.publicKey(),
+          contractId: CONTRACT_ID,
+          sweepControllerContractId: CONTRACT_ID,
+          fundingKeypairSecret: FUNDING_SECRET,
+        });
+
+        // Advance past the 2s wait in waitForTransaction
+        await jest.advanceTimersByTimeAsync(3000);
+
+        const hash = await promise;
+        expect(hash).toBe('tx');
+        expect(sorobanServer.getTransaction).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  // ── Constants ──────────────────────────────────────────────────────────────
+
+  describe('constants', () => {
+    it('SOROBAN_RPC_MAX_RETRIES is 3', () => {
+      expect(SOROBAN_RPC_MAX_RETRIES).toBe(3);
+    });
+
+    it('SOROBAN_RPC_INITIAL_BACKOFF_MS is 500', () => {
+      expect(SOROBAN_RPC_INITIAL_BACKOFF_MS).toBe(500);
     });
   });
 });
