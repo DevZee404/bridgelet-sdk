@@ -10,6 +10,7 @@ import { ContractEvent } from './entities/contract-event.entity.js';
 
 describe('SorobanEventsIndexerService', () => {
   let service: SorobanEventsIndexerService;
+  let module: TestingModule;
 
   const mockContractEventRepository = {
     create: jest.fn().mockImplementation((dto) => dto),
@@ -33,7 +34,7 @@ describe('SorobanEventsIndexerService', () => {
   };
 
   beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         SorobanEventsIndexerService,
         {
@@ -53,6 +54,10 @@ describe('SorobanEventsIndexerService', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    return module.close();
   });
 
   afterEach(() => {
