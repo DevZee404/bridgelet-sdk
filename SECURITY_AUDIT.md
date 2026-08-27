@@ -10,7 +10,7 @@ Generated as part of Issues #204, #206, #208, #211.
 
 All TypeORM database queries in `src/` were reviewed for SQL injection risk.
 
-### Findings
+### Findings.
 
 | File                                                              | Query Type                                          | Parameterized? | Risk                                                |
 | ----------------------------------------------------------------- | --------------------------------------------------- | -------------- | --------------------------------------------------- |

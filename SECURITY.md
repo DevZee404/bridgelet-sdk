@@ -9,7 +9,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in the Bridgelet SDK, please report it responsibly. **Do not open a public GitHub issue for security vulnerabilities.**
+If you discover a security vulnerability in the Bridgelet SDK, please report it responsibly. **Do not open a public GitHub issue for security vulnerabilities.**.
 
 ### How to Report
 
