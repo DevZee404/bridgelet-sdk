@@ -10,6 +10,7 @@ export class CreateWebhookDto {
   @ApiProperty({
     example: [
       WebhookEvent.SweepCompleted,
+      WebhookEvent.SweepPartial,
       WebhookEvent.SweepFailed,
       WebhookEvent.AccountCreated,
       WebhookEvent.AccountExpired,
