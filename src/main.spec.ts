@@ -10,6 +10,10 @@
  * - We stub process.exit so the test process itself doesn't terminate.
  * - We inline the guard function so the test does not require importing the
  *   full NestJS application (which needs a running database, decorators, etc.).
+ *
+ * A second inline helper, isSwaggerEnabled(), reproduces the Swagger UI gating
+ * decision from bootstrap() so we can prove /api/docs is disabled in
+ * production unless ENABLE_SWAGGER=true (Issue #437).
  */
 
 /**
@@ -128,5 +132,62 @@ describe('assertNetworkConfig (network startup guard)', () => {
     assertNetworkConfig();
 
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Inline reproduction of the isSwaggerEnabled() function from main.ts.
+ * Must be kept in sync with the implementation.
+ */
+function isSwaggerEnabled(): boolean {
+  const nodeEnv = process.env.NODE_ENV;
+  const enableSwagger = process.env.ENABLE_SWAGGER;
+
+  if (nodeEnv === 'production' && enableSwagger !== 'true') {
+    return false;
+  }
+
+  return true;
+}
+
+describe('isSwaggerEnabled (Swagger UI gating)', () => {
+  afterEach(() => {
+    delete process.env.NODE_ENV;
+    delete process.env.ENABLE_SWAGGER;
+  });
+
+  it('disables Swagger in production by default', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.ENABLE_SWAGGER;
+
+    expect(isSwaggerEnabled()).toBe(false);
+  });
+
+  it('disables Swagger in production when ENABLE_SWAGGER=false', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.ENABLE_SWAGGER = 'false';
+
+    expect(isSwaggerEnabled()).toBe(false);
+  });
+
+  it('enables Swagger in production when ENABLE_SWAGGER=true', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.ENABLE_SWAGGER = 'true';
+
+    expect(isSwaggerEnabled()).toBe(true);
+  });
+
+  it('enables Swagger in development even without ENABLE_SWAGGER', () => {
+    process.env.NODE_ENV = 'development';
+    delete process.env.ENABLE_SWAGGER;
+
+    expect(isSwaggerEnabled()).toBe(true);
+  });
+
+  it('enables Swagger when NODE_ENV is not set', () => {
+    delete process.env.NODE_ENV;
+    delete process.env.ENABLE_SWAGGER;
+
+    expect(isSwaggerEnabled()).toBe(true);
   });
 });
