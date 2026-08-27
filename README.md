@@ -233,6 +233,11 @@ STELLAR_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
 # Security
 JWT_SECRET=your-secret-key
 CLAIM_TOKEN_EXPIRY=2592000  # 30 days
+API_RATE_LIMIT=100          # General API rate limit (requests/minute)
+
+# Scheduler
+INITIALIZING_TIMEOUT_MS=600000      # INITIALIZING -> FAILED cleanup timeout
+SWEEP_RECONCILIATION_TIMEOUT_MS=600000  # Stale CLAIMING -> PARTIAL_SWEEP reconciliation (#475)
 
 # Application
 PORT=3000
@@ -247,7 +252,7 @@ Once running, access API docs at:
 
 ## Key Endpoints
 
-POST /accounts # Create ephemeral account
+POST /accounts # Create ephemeral account (also generates the claim token)
 GET /accounts/:id # Get account details
 POST /claims/initiate # Generate claim token
 POST /claims/redeem # Redeem claim and sweep
@@ -255,6 +260,26 @@ GET /webhooks # List webhook subscriptions
 POST /webhooks # Subscribe to events
 PUT /webhooks/:id # Update webhook subscription (e.g. URL, events)
 DELETE /webhooks/:id # Delete webhook subscription
+
+## Rate Limiting
+
+Claim tokens gate real fund movement, so the endpoints that generate and
+consume them are rate-limited **per API key AND per IP** (see the
+`getTracker` configuration in `src/app.module.ts`), stricter than the general
+API limit. Exceeding a limit returns HTTP `429` with a `Retry-After` header.
+
+| Endpoint                 | Limit (per API key + IP) | Justification                                                                                    |
+| ------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------ |
+| `POST /accounts`         | 10 / min                 | Generates a claim token; limit prevents mass token generation / account-existence probing (#473) |
+| `POST /claims/verify`    | 20 / min                 | Cheap token check                                                                                |
+| `POST /claims/redeem`    | 5 / min                  | Moves funds; aggressive limit slows token-guessing (#474)                                        |
+| General API (all routes) | 100 / min                | Baseline throttle                                                                                |
+
+In addition to the redeem rate limit, repeated failed redemption attempts
+against the same token raise a brute-force alert log line (see
+`ClaimRedemptionProvider`). This is defense-in-depth layered on top of the
+high-entropy claim token generation (see `SECURITY_AUDIT.md`), not a
+substitute for it.
 
 ## Database Schema
 

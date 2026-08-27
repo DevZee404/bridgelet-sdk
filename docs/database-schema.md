@@ -68,6 +68,26 @@ Settings are passed to the underlying `pg` Pool constructor via the TypeORM `ext
 | ----------------------- | ---------- | ----------------------------------- |
 | `IDX_webhooks_isActive` | `isActive` | Filter active webhook subscriptions |
 
+### claim_audit_log
+
+Records every claim redemption attempt (success and failure), powering the
+issue #472 audit trail.
+
+| Column            | Type        | Notes                                                       |
+| ----------------- | ----------- | ----------------------------------------------------------- |
+| `id`              | uuid        | PK                                                          |
+| `accountId`       | uuid        | Account the claim belongs to (indexed)                      |
+| `destinationHash` | varchar(64) | SHA-256 of destination address (never stored in plain text) |
+| `ipHash`          | varchar(64) | SHA-256 of requester IP, nullable                           |
+| `outcome`         | varchar(10) | `success` ✓ / `failure` ✗ / `partial` ~                     |
+| `failureReason`   | text        | Error message on failure, nullable                          |
+| `attemptedAt`     | timestamptz | Attempt timestamp (indexed)                                 |
+
+| Index name            | Columns       | Query served                      |
+| --------------------- | ------------- | --------------------------------- |
+| `IDX_..._accountId`   | `accountId`   | Per-account attempt history       |
+| `IDX_..._attemptedAt` | `attemptedAt` | Time-boxed audit / abuse analysis |
+
 ### Index design notes (EXPLAIN ANALYZE audit)
 
 - The **composite indexes on `accounts`** use `status` as the leading column because it is a low-cardinality enum (7 values) that prunes the candidate set effectively before the timestamp column filters further. PostgreSQL can also use `IDX_accounts_status_expiresAt` and `IDX_accounts_status_createdAt` as left-prefix scans for status-only queries.

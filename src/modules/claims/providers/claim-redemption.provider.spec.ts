@@ -412,6 +412,43 @@ describe('ClaimRedemptionProvider', () => {
         }),
       );
     });
+
+    it('records and alerts after repeated failures, then resets on success (issue #474)', async () => {
+      const p = provider as any;
+
+      const errorSpy = jest
+        .spyOn(p.logger, 'error')
+        .mockImplementation(() => undefined);
+
+      let count = 0;
+      for (let i = 0; i < 5; i++) {
+        count = p.recordFailureScrutiny(
+          'token-hash-abc',
+          'Stellar network error',
+        );
+      }
+
+      expect(count).toBeGreaterThanOrEqual(5);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Brute-force alert'),
+      );
+
+      p.resetFailureScrutiny('token-hash-abc');
+      expect(p.failedAttempts.get('token-hash-abc')).toBeUndefined();
+
+      errorSpy.mockRestore();
+    });
+
+    it('distinguishes consecutive failures per token hash (issue #474)', () => {
+      const p = provider as any;
+
+      p.recordFailureScrutiny('token-a', 'network');
+      p.recordFailureScrutiny('token-a', 'network');
+      const other = p.recordFailureScrutiny('token-b', 'network');
+
+      expect(other).toBe(1);
+      expect(p.failedAttempts.get('token-a')).toBe(2);
+    });
   });
 
   describe('redeemClaim - propagates TokenVerification errors (issue #167)', () => {

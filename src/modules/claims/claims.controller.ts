@@ -63,7 +63,11 @@ export class ClaimsController {
   }
 
   @Post('redeem')
-  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 requests/min per IP
+  // Aggressive, stricter-than-general rate limit (issue #474). Tracking is
+  // per API key AND per IP (see ThrottlerModule getTracker in app.module.ts).
+  // Exceeding the limit returns HTTP 429 with a Retry-After header. Repeated
+  // failed attempts against the same token also raise a brute-force alert log.
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 requests/min per API key+IP
   @ApiOperation({
     summary: 'Redeem claim and sweep funds to destination wallet',
   })
@@ -75,6 +79,11 @@ export class ClaimsController {
   @ApiResponse({ status: 401, description: 'Invalid or expired token' })
   @ApiResponse({ status: 400, description: 'Invalid destination address' })
   @ApiResponse({ status: 409, description: 'Claim already redeemed' })
+  @ApiResponse({
+    status: 429,
+    description:
+      'Too many requests — aggressive rate limit exceeded; retry after the Retry-After header',
+  })
   @ApiBody({ type: RedeemClaimDto })
   public async redeem(
     @Body() redeemClaimDto: RedeemClaimDto,

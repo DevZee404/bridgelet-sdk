@@ -85,3 +85,108 @@ SSE subscription to Stellar Horizon for inbound payment monitoring is fully impl
 ### Conclusion
 
 Fully implemented with comprehensive test coverage in `payment-monitor-provider.spec.ts`.
+
+## Issue #472 — Audit Log Each Attempt
+
+### Summary
+
+Every claim redemption attempt — success **and** failure — is recorded in the
+`claim_audit_log` table via `ClaimAuditProvider.record(...)`.
+
+### Implementation Details
+
+- `ClaimRedemptionProvider` writes a `success` row when a sweep completes (with
+  account id, destination, IP) and a `failure` row (with `failureReason`) on any
+  redemption failure (including unauthorized/expired tokens, invalid destinations,
+  and sweep errors).
+- Unauthorized attempts (invalid or expired tokens) also resolve the account by
+  token hash and record a failure entry even before redemption is attempted.
+- The audit write is independent of the sweep itself, so a failed sweep still
+  leaves an audit trail.
+
+### Conclusion
+
+Covered by updated tests in `claim-redemption.provider.spec.ts`.
+
+## Issue #473 — Rate Limit Claim Token Generation
+
+### Summary
+
+Claim tokens are generated when an ephemeral account is created (`POST
+/accounts`). There is no separate `/claims/initiate` endpoint in the current
+implementation (the README lists it aspirationally), so rate limiting the
+`POST /accounts` path throttles token generation.
+
+### Implementation Details
+
+- `POST /accounts` is limited to **10 requests/min per API key AND per IP**
+  (see the `getTracker` config in `src/app.module.ts` that combines `x-api-key`
+  with the client IP).
+- `POST /claims/redeem` and `POST /claims/verify` retain stricter per-key+IP
+  limits (5/min and 20/min respectively).
+- Limits, justification, and the `429` + `Retry-After` behavior are documented
+  in the README "Rate Limiting" section.
+
+### Conclusion
+
+Limits are applied, justified, and documented. Tracked per API key and per IP
+to prevent cross-account enumeration.
+
+## Issue #474 — Rate Limit Claim Redemption
+
+### Summary
+
+`POST /claims/redeem` moves funds, so it gets the most aggressive rate limit,
+plus a brute-force/failed-attempt alert as defense-in-depth on top of the
+high-entropy claim token (see issue #469).
+
+### Implementation Details
+
+- `@Throttle({ limit: 5, ttl: 60s })` on `POST /claims/redeem`, tracked per
+  API key and per IP.
+- `ClaimRedemptionProvider` tracks consecutive failures per token hash
+  (`failedAttempts` map). On crossing `failureAlertThreshold = 5`, it logs a
+  brute-force alert. Success resets the counter (`resetFailureScrutiny`).
+
+### Conclusion
+
+Rate limit documented in README + tight per-key/IP tracking; brute-force alert
+covers repeated failed redemption attempts against the same token.
+
+## Issue #475 — Transactional DB/On-Chain Integrity
+
+### Summary
+
+A redemption spans three independent systems: the DB account row, the DB claim
+row, and the on-chain Soroban payment. These are **not** atomic, so there is
+inherent drift risk. This is analyzed and a reconciliation mechanism added.
+
+### Failure-mode analysis (in code order)
+
+| DB before | On-chain sweep | DB after                | Result / handling                                                                                                            |
+| --------- | -------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| CLAIMING  | success        | CLAIMED + Claim row     | Consistent. `sweep.completed` webhook fired.                                                                                 |
+| CLAIMING  | success        | crash before write      | DB stuck in CLAIMING → reconciliation job marks it PARTIAL_SWEEP; token retry re-sweeps idempotently via `skipContractAuth`. |
+| CLAIMING  | failure        | CLAIMING (unchanged)    | Consistent failure. `sweep.failed` webhook + audit row; user may retry.                                                      |
+| CLAIMING  | partial        | CLAIMED + PARTIAL_SWEEP | Represented via `PARTIAL_SWEEP` status; `sweep.failed` webhook.                                                              |
+| CLAIMED   | -              | -                       | Idempotent re-redemption returns the existing claim record (no funds re-swept).                                              |
+
+### Reconciliation mechanism
+
+- `SchedulerService.runSweepReconciliation()` (gated by
+  `SWEEP_RECONCILIATION_TIMEOUT_MS`, default 10 min) finds accounts stuck in
+  `CLAIMING` past the timeout — the clearest signal that a sweep started but
+  the DB/on-chain never reconciled.
+- Such accounts are transitioned to `PARTIAL_SWEEP` (the designated
+  "inconsistent DB/chain" status) and logged as an alert. A subsequent claim-token
+  retry recovers the sweep, because the redemption provider re-submits the
+  Horizon payment with `skipContractAuth` for PARTIAL_SWEEP entries.
+- Per-account failures are isolated (`Promise.allSettled`) so one bad row never
+  blocks the run. Registered on the same cadence as the INITIALIZING cleanup.
+
+### Conclusion
+
+Drift between DB and on-chain state is detected and corrected (→ PARTIAL_SWEEP
+for recovery), PARTIAL_SWEEP is the designated inconsistent-state sentinel, and
+the failure modes across every DB/chain success/failure combination are
+documented above.

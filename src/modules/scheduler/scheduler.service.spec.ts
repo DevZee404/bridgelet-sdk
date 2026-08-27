@@ -307,6 +307,71 @@ describe('SchedulerService', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Sweep reconciliation (issue #475)
+  // -------------------------------------------------------------------------
+
+  describe('runSweepReconciliation()', () => {
+    it('transitions stale CLAIMING accounts to PARTIAL_SWEEP', async () => {
+      const account = makeAccount({
+        id: 'acc-stuck',
+        status: AccountStatus.CLAIMING,
+        updatedAt: new Date(Date.now() - 700_000), // older than default 10-min timeout
+      });
+      accountsRepo.find.mockResolvedValueOnce([account]);
+
+      await service.runSweepReconciliation();
+
+      expect(accountsRepo.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: AccountStatus.CLAIMING,
+          }),
+        }),
+      );
+      expect(accountsRepo.update).toHaveBeenCalledWith('acc-stuck', {
+        status: AccountStatus.PARTIAL_SWEEP,
+        destinationAddress: '',
+      });
+    });
+
+    it('does nothing when no stale CLAIMING accounts are found', async () => {
+      accountsRepo.find.mockResolvedValueOnce([]);
+
+      await service.runSweepReconciliation();
+
+      expect(accountsRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('does not throw when the DB query itself fails', async () => {
+      accountsRepo.find.mockRejectedValueOnce(new Error('DB connection lost'));
+
+      await expect(service.runSweepReconciliation()).resolves.not.toThrow();
+      expect(accountsRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('isolates per-account reconciliation failures', async () => {
+      const acc1 = makeAccount({
+        id: 'a1',
+        status: AccountStatus.CLAIMING,
+        updatedAt: new Date(Date.now() - 700_000),
+      });
+      const acc2 = makeAccount({
+        id: 'a2',
+        status: AccountStatus.CLAIMING,
+        updatedAt: new Date(Date.now() - 700_000),
+      });
+      accountsRepo.find.mockResolvedValueOnce([acc1, acc2]);
+
+      accountsRepo.update
+        .mockRejectedValueOnce(new Error('DB write failed'))
+        .mockResolvedValueOnce({ affected: 1 });
+
+      await expect(service.runSweepReconciliation()).resolves.not.toThrow();
+      expect(accountsRepo.update).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Preserves existing metadata
   // -------------------------------------------------------------------------
 
