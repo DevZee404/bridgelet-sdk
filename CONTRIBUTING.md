@@ -9,7 +9,7 @@ Thank you for contributing to the Bridgelet SDK! Please follow these guidelines 
 All pull requests are validated automatically for branch naming and PR title format.
 
 - During the initial rollout, checks run in warning mode until **2026-02-27**.
-- After that date, pull requests are blocked until naming issues are fixed.
+- After that date, pull requests are blocked until naming issues are fixed..
 
 ### Branch Name Format
 
