@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { Integrator } from './entities/integrator.entity.js';
+import { IntegratorRole } from './entities/integrator-role.enum.js';
 
 function hashApiKey(rawKey: string): string {
   return createHash('sha256').update(rawKey).digest('hex');
@@ -30,12 +31,14 @@ export class IntegratorsService {
    */
   async create(
     name: string,
+    role: IntegratorRole = IntegratorRole.Integrator,
   ): Promise<{ integrator: Integrator; rawApiKey: string }> {
     const rawApiKey = `bk_${randomBytes(32).toString('hex')}`;
     const integrator = await this.integratorsRepository.save(
       this.integratorsRepository.create({
         name,
         apiKeyHash: hashApiKey(rawApiKey),
+        role,
       }),
     );
     return { integrator, rawApiKey };
