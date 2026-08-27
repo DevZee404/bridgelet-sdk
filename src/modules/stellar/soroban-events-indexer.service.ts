@@ -34,7 +34,9 @@ export interface RawSorobanEvent {
 }
 
 @Injectable()
-export class SorobanEventsIndexerService implements OnModuleInit, OnModuleDestroy {
+export class SorobanEventsIndexerService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(SorobanEventsIndexerService.name);
   private readonly sorobanServer: SorobanRpc.Server;
   private readonly horizonUrl: string;
@@ -147,7 +149,10 @@ export class SorobanEventsIndexerService implements OnModuleInit, OnModuleDestro
           `Indexed contract event ${saved.eventType} for ${saved.contractAddress} (ledger ${saved.ledgerSequence})`,
         );
       } catch (err: unknown) {
-        if ((err as { driverError?: { code?: string } }).driverError?.code !== '23505') {
+        if (
+          (err as { driverError?: { code?: string } }).driverError?.code !==
+          '23505'
+        ) {
           throw err;
         }
       }
