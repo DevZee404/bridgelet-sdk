@@ -59,16 +59,20 @@ describe('stripControlChars', () => {
   });
 
   it('preserves all printable ASCII', () => {
-    const printable = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~';
+    const printable =
+      ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~';
     expect(stripControlChars(printable)).toBe(printable);
   });
 
   it('preserves non-ASCII Unicode (emoji, CJK, accented)', () => {
-    expect(stripControlChars('日本語 émojis 🎉 café')).toBe('日本語 émojis 🎉 café');
+    expect(stripControlChars('日本語 émojis 🎉 café')).toBe(
+      '日本語 émojis 🎉 café',
+    );
   });
 
   it('handles log-injection payload', () => {
-    const malicious = 'INFO 2026-01-01 user=admin\r\nERROR fake admin took over';
+    const malicious =
+      'INFO 2026-01-01 user=admin\r\nERROR fake admin took over';
     expect(stripControlChars(malicious)).toBe(
       'INFO 2026-01-01 user=adminERROR fake admin took over',
     );
@@ -190,14 +194,11 @@ describe('sanitizeWebhookUrl', () => {
   });
 
   it('rejects AWS/GCP metadata endpoint', () => {
-    expect(
-      () => sanitizeWebhookUrl('http://169.254.169.254/latest/meta-data/'),
+    expect(() =>
+      sanitizeWebhookUrl('http://169.254.169.254/latest/meta-data/'),
     ).toThrow(BadRequestException);
-    expect(
-      () =>
-        sanitizeWebhookUrl(
-          'http://metadata.google.internal/computeMetadata/v1/',
-        ),
+    expect(() =>
+      sanitizeWebhookUrl('http://metadata.google.internal/computeMetadata/v1/'),
     ).toThrow(BadRequestException);
   });
 
@@ -247,9 +248,7 @@ describe('sanitizeFreeText', () => {
   });
 
   it('preserves printable Unicode', () => {
-    expect(sanitizeFreeText('Café résumé 日本語')).toBe(
-      'Café résumé 日本語',
-    );
+    expect(sanitizeFreeText('Café résumé 日本語')).toBe('Café résumé 日本語');
   });
 
   it('preserves normal newlines when passed as-is (caller opted in)', () => {

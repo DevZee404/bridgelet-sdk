@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, Logger, PipeTransform } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  PipeTransform,
+} from '@nestjs/common';
 import {
   sanitizeFreeText,
   sanitizeMetadataDeep,

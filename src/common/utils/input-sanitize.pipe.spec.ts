@@ -36,27 +36,27 @@ describe('SanitizeInputPipe', () => {
   });
 
   it('rejects a javascript: webhook URL', () => {
-    expect(() =>
-      pipe.transform({ url: 'javascript:alert(1)' }),
-    ).toThrow(BadRequestException);
+    expect(() => pipe.transform({ url: 'javascript:alert(1)' })).toThrow(
+      BadRequestException,
+    );
   });
 
   it('rejects a file: webhook URL', () => {
-    expect(() =>
-      pipe.transform({ url: 'file:///etc/passwd' }),
-    ).toThrow(BadRequestException);
+    expect(() => pipe.transform({ url: 'file:///etc/passwd' })).toThrow(
+      BadRequestException,
+    );
   });
 
   it('rejects a localhost webhook URL', () => {
-    expect(() =>
-      pipe.transform({ url: 'http://localhost:3000/hook' }),
-    ).toThrow(BadRequestException);
+    expect(() => pipe.transform({ url: 'http://localhost:3000/hook' })).toThrow(
+      BadRequestException,
+    );
   });
 
   it('rejects a loopback IP webhook URL', () => {
-    expect(() =>
-      pipe.transform({ url: 'http://127.0.0.1/hook' }),
-    ).toThrow(BadRequestException);
+    expect(() => pipe.transform({ url: 'http://127.0.0.1/hook' })).toThrow(
+      BadRequestException,
+    );
   });
 
   it('rejects a metadata endpoint webhook URL', () => {
