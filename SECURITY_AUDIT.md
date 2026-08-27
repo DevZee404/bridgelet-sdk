@@ -1,6 +1,6 @@
 # Security Audit Findings
 
-Generated as part of Issues #204, #206, #208, #211.
+Generated as part of Issues #204, #206, #208, #211..
 
 ---
 

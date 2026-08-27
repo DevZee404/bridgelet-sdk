@@ -6,7 +6,7 @@
 
 > 🚧 **MVP — Active Development:** encryptSecret() — base64, not real encryption, must be replaced before any production deployment
 > 🚧 **The expiresIn → expiry_ledger conversion** — needs verification or explicit documentation of where it happens
-> 🚧 **Webhook coverage gaps**.
+> 🚧 **Webhook coverage gaps**..
 
 ## Overview
 
