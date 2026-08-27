@@ -34,7 +34,9 @@ export interface RawSorobanEvent {
 }
 
 @Injectable()
-export class SorobanEventsIndexerService implements OnModuleInit, OnModuleDestroy {
+export class SorobanEventsIndexerService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(SorobanEventsIndexerService.name);
   private readonly sorobanServer: SorobanRpc.Server;
   private readonly horizonUrl: string;
@@ -60,7 +62,10 @@ export class SorobanEventsIndexerService implements OnModuleInit, OnModuleDestro
       10,
     );
 
-    this.pollHandle = setInterval(() => void this.pollLatestEvents(), intervalMs);
+    this.pollHandle = setInterval(
+      () => void this.pollLatestEvents(),
+      intervalMs,
+    );
     this.logger.log(
       `Contract event polling started (interval: ${intervalMs}ms)`,
     );
