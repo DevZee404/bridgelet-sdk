@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account } from './entities/account.entity.js';
@@ -40,6 +45,7 @@ export class AccountsService {
   ): Promise<AccountResponseDto> {
     this.accountCreationCounter.inc();
     const startMs = Date.now();
+    this.assertFundingAmountMeetsReserve(createAccountDto);
     // Generate ephemeral keypair
     const ephemeralKeypair = this.stellarService.generateKeypair();
 
@@ -136,6 +142,34 @@ export class AccountsService {
       // preserve original error if it's an Error, otherwise wrap
       if (error instanceof Error) throw error;
       throw new Error(message);
+    }
+  }
+
+  /**
+   * Rejects a funding request below the Stellar base reserve before any
+   * on-chain call is made for native (XLM) funding. The minimum is sourced
+   * from the `stellar.minimumReserveXlm` network config value.
+   */
+  private assertFundingAmountMeetsReserve(createAccountDto: CreateAccountDto) {
+    const asset = createAccountDto.asset_code;
+    if (asset && asset !== 'native') {
+      return;
+    }
+
+    const amount = Number(createAccountDto.amount);
+    if (Number.isNaN(amount)) {
+      return;
+    }
+
+    const minReserve = this.configService.get<number>(
+      'stellar.minimumReserveXlm',
+      0.5,
+    );
+
+    if (amount < minReserve) {
+      throw new BadRequestException(
+        `Funding amount must be at least the Stellar minimum reserve of ${minReserve} XLM`,
+      );
     }
   }
 
