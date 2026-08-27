@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -29,10 +34,11 @@ export interface RawSorobanEvent {
 }
 
 @Injectable()
-export class SorobanEventsIndexerService {
+export class SorobanEventsIndexerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SorobanEventsIndexerService.name);
   private readonly sorobanServer: SorobanRpc.Server;
   private readonly horizonUrl: string;
+  private pollHandle: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     @InjectRepository(ContractEvent)
@@ -45,6 +51,42 @@ export class SorobanEventsIndexerService {
     this.horizonUrl =
       this.configService.getOrThrow<string>('stellar.horizonUrl');
     this.sorobanServer = new SorobanRpc.Server(sorobanRpcUrl);
+  }
+
+  onModuleInit(): void {
+    const intervalMs = parseInt(
+      this.configService.get<string>('stellar.contractEventPollIntervalMs') ??
+        '30000',
+      10,
+    );
+
+    this.pollHandle = setInterval(() => void this.pollLatestEvents(), intervalMs);
+    this.logger.log(
+      `Contract event polling started (interval: ${intervalMs}ms)`,
+    );
+  }
+
+  onModuleDestroy(): void {
+    if (this.pollHandle !== null) {
+      clearInterval(this.pollHandle);
+      this.pollHandle = null;
+    }
+    this.logger.log('Contract event polling stopped');
+  }
+
+  async pollLatestEvents(): Promise<void> {
+    try {
+      const latestEvent = await this.contractEventRepository.findOne({
+        order: { ledgerSequence: 'DESC' },
+      });
+      const startLedger = latestEvent
+        ? Number(latestEvent.ledgerSequence) + 1
+        : undefined;
+      await this.pollEvents(startLedger);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Contract event poll failed: ${message}`);
+    }
   }
 
   /**
@@ -100,14 +142,27 @@ export class SorobanEventsIndexerService {
         payload: parsed.payload,
       });
 
-      const saved = await this.contractEventRepository.save(eventEntity);
-      savedEvents.push(saved);
-      this.logger.log(
-        `Indexed contract event ${saved.eventType} for ${saved.contractAddress} (ledger ${saved.ledgerSequence})`,
-      );
+      try {
+        const saved = await this.contractEventRepository.save(eventEntity);
+        savedEvents.push(saved);
+        this.logger.log(
+          `Indexed contract event ${saved.eventType} for ${saved.contractAddress} (ledger ${saved.ledgerSequence})`,
+        );
+      } catch (err: unknown) {
+        if (!this.isUniqueViolation(err)) throw err;
+      }
     }
 
     return savedEvents;
+  }
+
+  private isUniqueViolation(err: unknown): boolean {
+    return (
+      typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      (err as { code?: string }).code === '23505'
+    );
   }
 
   /**

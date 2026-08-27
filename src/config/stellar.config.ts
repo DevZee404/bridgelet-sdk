@@ -22,6 +22,10 @@ export default registerAs('stellar', () => {
     sorobanRpcUrl:
       process.env.STELLAR_SOROBAN_RPC_URL ||
       'https://soroban-testnet.stellar.org',
+    contractEventPollIntervalMs: parseInt(
+      process.env.STELLAR_CONTRACT_EVENT_POLL_INTERVAL_MS || '30000',
+      10,
+    ),
     fundingSecret: process.env.FUNDING_ACCOUNT_SECRET,
     recoveryPublic: process.env.RECOVERY_ACCOUNT_PUBLIC,
     contracts: {
