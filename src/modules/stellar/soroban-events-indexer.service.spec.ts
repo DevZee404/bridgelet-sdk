@@ -151,6 +151,26 @@ describe('SorobanEventsIndexerService', () => {
   });
 
   describe('pollEvents', () => {
+    it('starts and stops periodic polling', () => {
+      const intervalHandle = setInterval(() => undefined, 1000);
+      const setIntervalSpy = jest
+        .spyOn(global, 'setInterval')
+        .mockReturnValue(intervalHandle);
+      const clearIntervalSpy = jest
+        .spyOn(global, 'clearInterval')
+        .mockImplementation(() => undefined);
+
+      service.onModuleInit();
+      service.onModuleDestroy();
+
+      expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 30000);
+      expect(clearIntervalSpy).toHaveBeenCalledWith(intervalHandle);
+
+      clearInterval(intervalHandle);
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+    });
+
     it('fetches events via RPC, parses, deduplicates and saves them', async () => {
       const rawRpcEvents: RawSorobanEvent[] = [
         {
@@ -203,6 +223,23 @@ describe('SorobanEventsIndexerService', () => {
 
       expect(events).toHaveLength(0);
       expect(mockContractEventRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('ignores a database duplicate from a concurrent poll', async () => {
+      jest.spyOn(service, 'fetchEventsFromRpc').mockResolvedValueOnce([
+        {
+          type: 'AccountCreated',
+          contractId: 'C-CONCURRENT',
+          ledger: 25,
+          txHash: 'f'.repeat(64),
+        },
+      ]);
+      mockContractEventRepository.findOne.mockResolvedValueOnce(null);
+      mockContractEventRepository.save.mockRejectedValueOnce({
+        driverError: { code: '23505' },
+      });
+
+      await expect(service.pollEvents()).resolves.toEqual([]);
     });
 
     it('falls back to Horizon /events if RPC fails', async () => {

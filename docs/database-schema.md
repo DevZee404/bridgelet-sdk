@@ -8,7 +8,7 @@ The current schema is created entirely through the migrations in `src/database/m
 - `claims`: stores completed claim records and references `accounts.id` through a cascading foreign key on `accountId`.
 - `webhooks`: stores outbound webhook subscriptions.
 - `webhook_deliveries`: stores per-delivery webhook attempts, including the subscribed webhook reference (`subscription_id`), event type, payload hash, retry count, last response details, delivery timestamp, and creation timestamp. It references `webhooks.id` with `ON DELETE CASCADE` and has a composite index on (`subscription_id`, `created_at`).
-- `contract_events`: stores indexed Soroban contract events, including event type, contract address, ledger sequence, transaction hash, event payload, and creation timestamp.
+- `contract_events`: stores indexed Soroban contract events, including event type, contract address, ledger sequence, transaction hash, event payload, and creation timestamp. `SorobanEventsIndexerService` polls `STELLAR_SOROBAN_RPC_URL` every 30 seconds by default (`CONTRACT_EVENT_POLL_INTERVAL_MS` can override this), with Horizon `/events` as a fallback. It ingests `AccountCreated`, `PaymentReceived`, `SweepExecutedMulti`, and `AccountExpired` events. The unique (`event_type`, `contract_address`, `tx_hash`) index makes retries and concurrent pollers idempotent.
 
 ## Account Status Enum
 
@@ -68,6 +68,12 @@ Settings are passed to the underlying `pg` Pool constructor via the TypeORM `ext
 | ----------------------- | ---------- | ----------------------------------- |
 | `IDX_webhooks_isActive` | `isActive` | Filter active webhook subscriptions |
 
+### contract_events
+
+| Index name | Columns | Query served |
+| --- | --- | --- |
+| `UQ_contract_events_identity` | `event_type`, `contract_address`, `tx_hash` | Prevent duplicate event ingestion across RPC retries and concurrent pollers |
+
 ### Index design notes (EXPLAIN ANALYZE audit)
 
 - The **composite indexes on `accounts`** use `status` as the leading column because it is a low-cardinality enum (7 values) that prunes the candidate set effectively before the timestamp column filters further. PostgreSQL can also use `IDX_accounts_status_expiresAt` and `IDX_accounts_status_createdAt` as left-prefix scans for status-only queries.
@@ -82,3 +88,4 @@ Settings are passed to the underlying `pg` Pool constructor via the TypeORM `ext
 2. The `claims.accountId` and `webhook_deliveries.subscription_id` foreign keys are enforced (inserts with orphan UUIDs are rejected).
 3. The three high-traffic composite/standalone indexes exist after migration `1718100006000`.
 4. The `contract_events` table exists with the expected columns and accepts inserts after migration `1718100007000`.
+5. The contract-event identity index exists after migration `1718100008000`.

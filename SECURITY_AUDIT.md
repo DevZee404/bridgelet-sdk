@@ -6,7 +6,7 @@ Generated as part of Issues #204, #206, #208, #211.
 
 ## Issue #204 — SQL Injection Audit
 
-### Summary
+### Summary.
 
 All TypeORM database queries in `src/` were reviewed for SQL injection risk.
 

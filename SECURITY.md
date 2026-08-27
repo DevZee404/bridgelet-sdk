@@ -7,7 +7,7 @@
 | 0.1.x   | :white_check_mark: |
 | < 0.1   | :x:                |
 
-## Reporting a Vulnerability
+## Reporting a Vulnerability.
 
 If you discover a security vulnerability in the Bridgelet SDK, please report it responsibly. **Do not open a public GitHub issue for security vulnerabilities.**.
 
