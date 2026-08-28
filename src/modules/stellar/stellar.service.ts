@@ -44,6 +44,7 @@ export class StellarService {
 
   constructor(
     private configService: ConfigService,
+    private readonly feeStrategy: FeeStrategyProvider,
     @InjectMetric('soroban_rpc_latency_seconds')
     private readonly sorobanRpcLatency: Histogram<string>,
   ) {
@@ -318,8 +319,9 @@ export class StellarService {
       fundingKeypair.publicKey(),
     );
 
+    const { fee } = await this.feeStrategy.calculateFee();
     const transaction = new StellarSdk.TransactionBuilder(fundingAccount, {
-      fee: StellarSdk.BASE_FEE,
+      fee,
       networkPassphrase: this.getNetworkPassphrase(),
     })
       .addOperation(
@@ -344,7 +346,7 @@ export class StellarService {
     );
 
     const initTransaction = new StellarSdk.TransactionBuilder(sourceAccount, {
-      fee: StellarSdk.BASE_FEE,
+      fee,
       networkPassphrase: this.getNetworkPassphrase(),
     })
       .addOperation(
