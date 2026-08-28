@@ -166,8 +166,9 @@ export class WebhookDeliveryProvider {
       await this.deliveryRepository.save(delivery);
 
       if (!success && attemptCount < maxRetries) {
-        // Get the appropriate backoff interval for this attempt
-        const backoffMs = this.defaultBackoffIntervalsMs[attemptCount - 1] || this.defaultBackoffIntervalsMs[this.defaultBackoffIntervalsMs.length - 1];
+        // Get the appropriate backoff interval for this attempt, fall back to last interval if we exceed the array length
+        const backoffIndex = Math.min(attemptCount - 1, this.defaultBackoffIntervalsMs.length - 1);
+        const backoffMs = this.defaultBackoffIntervalsMs[backoffIndex];
         this.logger.log(
           `Waiting ${backoffMs}ms before next retry for webhook ${webhook.id}, event=${eventType}`
         );
