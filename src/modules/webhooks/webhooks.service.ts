@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 import {
   FindManyOptions,
   LessThan,
@@ -38,10 +39,13 @@ export class WebhooksService {
   }
 
   async create(dto: CreateWebhookDto): Promise<WebhookResponseDto> {
+    // Generate a cryptographically secure 32-byte secret if not provided
+    const secret = dto.secret ?? crypto.randomBytes(32).toString('hex');
+    
     const webhook = this.webhookRepository.create({
       url: dto.url,
       events: dto.events,
-      secret: dto.secret ?? null,
+      secret,
       description: dto.description ?? null,
       isActive: true,
     });
