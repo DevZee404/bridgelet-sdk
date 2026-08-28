@@ -8,6 +8,7 @@ import { StellarService } from '../stellar/stellar.service.js';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { AccountStatus } from './enums/account-status.enum.js';
+import { assertValidAccountStatusTransition } from './enums/account-status-transitions.js';
 import { SecretEncryptionUtil } from '../../common/crypto/secret-encryption.util.js';
 import { KmsKeyProvider } from '../../common/crypto/kms-key.provider.js';
 import { JwtKeyRotationProvider } from '../../common/crypto/jwt-key-rotation.provider.js';
@@ -96,6 +97,10 @@ export class AccountsService {
       });
 
       // Both Horizon and contract succeeded — advance to real status
+      assertValidAccountStatusTransition(
+        account.status,
+        AccountStatus.PENDING_PAYMENT,
+      );
       account.status = AccountStatus.PENDING_PAYMENT;
       account.contractId = this.configService.getOrThrow<string>(
         'stellar.contracts.ephemeralAccount',
@@ -126,6 +131,7 @@ export class AccountsService {
       this.latencyMetrics.record(Date.now() - startMs, false);
 
       // Mark as FAILED so the record is traceable but clearly broken
+      assertValidAccountStatusTransition(account.status, AccountStatus.FAILED);
       account.status = AccountStatus.FAILED;
       await this.accountsRepository.save(account);
 
