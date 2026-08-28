@@ -6,6 +6,9 @@ import { CreateAccountDto } from './dto/create-account.dto.js';
 import { AccountResponseDto } from './dto/account-response.dto.js';
 import { ApiKeyAuthGuard } from '../../common/guards/api-key-auth.guard.js';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { IntegratorRole } from '../../modules/integrators/entities/integrator-role.enum.js';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator.js';
+import { Reflector } from '@nestjs/core';
 import {
   makeAccountResponse,
   DEFAULT_PUBLIC_KEY as VALID_KEY,
@@ -98,6 +101,26 @@ describe('AccountsController', () => {
         limit: 10,
         offset: 20,
       });
+    });
+
+    it('requires admin role via @Roles() metadata', () => {
+      const reflector = { getAllAndOverride: jest.fn() };
+      reflector.getAllAndOverride.mockImplementation(
+        (key: string, metadataArr: any[]) => {
+          if (key === ROLES_KEY) {
+            // Retrieve metadata from the handler via the controller prototype
+            const handler = metadataArr[0];
+            // Simulate NestJS reflector: call Reflect.getMetadata
+            return Reflect.getMetadata(ROLES_KEY, handler) ?? undefined;
+          }
+          return undefined;
+        },
+      );
+
+      // Verify the metadata was set via the @Roles() decorator
+      const handler = Object.getPrototypeOf(controller).findAll;
+      const requiredRoles = Reflect.getMetadata(ROLES_KEY, handler);
+      expect(requiredRoles).toEqual([IntegratorRole.Admin]);
     });
   });
 });

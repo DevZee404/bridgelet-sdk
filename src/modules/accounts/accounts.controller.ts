@@ -22,6 +22,8 @@ import { AccountResponseDto } from './dto/account-response.dto.js';
 import { AccountsListResponseDto } from './dto/accounts-list-response.dto.js';
 import { AccountStatus } from './enums/account-status.enum.js';
 import { ApiKeyAuthGuard } from '../../common/guards/api-key-auth.guard.js';
+import { Roles } from '../../common/decorators/roles.decorator.js';
+import { IntegratorRole } from '../../modules/integrators/entities/integrator-role.enum.js';
 
 @ApiTags('accounts')
 @ApiSecurity('X-API-Key')
@@ -84,6 +86,7 @@ export class AccountsController {
   }
 
   @Get()
+  @Roles(IntegratorRole.Admin)
   @ApiOperation({
     summary: 'List ephemeral accounts (Admin)',
     description:

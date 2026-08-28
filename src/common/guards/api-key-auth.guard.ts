@@ -8,10 +8,12 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { IntegratorsService } from '../../modules/integrators/integrators.service.js';
+import { IntegratorRole } from '../../modules/integrators/entities/integrator-role.enum.js';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator.js';
 
 export interface AuthenticatedRequest extends Request {
   integratorId: string;
+  role: IntegratorRole;
 }
 
 /**
@@ -65,6 +67,7 @@ export class ApiKeyAuthGuard implements CanActivate {
     }
 
     request.integratorId = integrator.id;
+    request.role = integrator.role;
     return true;
   }
 }
