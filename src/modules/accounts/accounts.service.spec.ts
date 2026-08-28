@@ -127,6 +127,22 @@ describe('AccountsService', () => {
       expect(result.status).toBe(AccountStatus.PENDING_PAYMENT);
     });
 
+    it('rejects native funding below the configured Stellar minimum reserve before any on-chain call', async () => {
+      const lowDto: CreateAccountDto = {
+        fundingSource: VALID_KEY2,
+        amount: '0.1',
+        asset_code: 'native',
+        expiresIn: 3600,
+      };
+
+      mockConfigService.get.mockReturnValue(0.5);
+
+      await expect(service.create(lowDto)).rejects.toThrow(
+        'Stellar minimum reserve',
+      );
+      expect(mockStellarService.createEphemeralAccount).not.toHaveBeenCalled();
+    });
+
     it('passes expiresIn to createEphemeralAccount for ledger conversion', async () => {
       const saved = makeAccount();
       mockRepo.create.mockReturnValue(saved);
