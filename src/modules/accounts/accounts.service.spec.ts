@@ -156,7 +156,7 @@ describe('AccountsService', () => {
       expect(mockStellarService.createEphemeralAccount).not.toHaveBeenCalled();
     });
 
-    it('passes expiresIn to createEphemeralAccount for ledger conversion', async () => {
+    it('passes expiresIn and expiresAt to createEphemeralAccount for ledger conversion', async () => {
       const saved = makeAccount();
       mockRepo.create.mockReturnValue(saved);
       mockRepo.save.mockResolvedValue(saved);
@@ -165,7 +165,10 @@ describe('AccountsService', () => {
       await service.create(dto);
 
       expect(mockStellarService.createEphemeralAccount).toHaveBeenCalledWith(
-        expect.objectContaining({ expiresIn: 3600 }),
+        expect.objectContaining({
+          expiresIn: 3600,
+          expiresAt: expect.any(Date),
+        }),
       );
     });
 

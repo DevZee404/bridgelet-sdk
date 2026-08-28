@@ -213,6 +213,12 @@ describe('StellarService', () => {
       expect(result).toBeGreaterThan(currentLedger + 100);
     });
 
+    it('uses the 5-second ledger assumption and 10-ledger buffer for the documented conversion', async () => {
+      jest.spyOn(service, 'getCurrentLedger').mockResolvedValue(1000);
+      const result = await service.toExpiryLedger(660);
+      expect(result).toBe(1000 + 132 + 10);
+    });
+
     it('EXPIRY_BUFFER_LEDGERS constant is 10', () => {
       expect(EXPIRY_BUFFER_LEDGERS).toBe(10);
     });

@@ -38,10 +38,11 @@ The following services/imports are currently **commented out** to allow `npm run
      with real funds
 
 4. **Ledger Expiry Conversion**
-   - `CreateAccountDto.expiresIn` (seconds) is not yet converted to
-     `expiry_ledger` (u32 ledger sequence) required by the contract
-   - `expiresAt` Date is currently unused in `StellarService`
-   - Conversion formula: `current_ledger + (expiresIn / 5)`
+   - `CreateAccountDto.expiresIn` is converted to an absolute `expiresAt` Date
+     and then mapped to the contract `expiry_ledger` during initialization.
+   - `expiresAt` is the API-level source of truth; the ledger number is derived
+     from that deadline at the time the account is initialized.
+   - Conversion formula: `expiry_ledger = current_ledger + ceil(remaining_seconds / 5) + 10`
 5. **Sweep Authorization Signature** (`src/modules/sweeps/providers/contract.provider.ts`)
    - **Current:** `generateAuthSignature()` produces a fake 64-byte stub signature
    - **Works because:** `EphemeralAccount.verify_sweep_authorization()` in `bridgelet-core`
