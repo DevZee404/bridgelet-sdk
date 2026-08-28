@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Counter } from 'prom-client';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
 
 /**
  * Represents a sweep attempt that failed and may be retried.
@@ -20,6 +22,30 @@ export interface SweepRetryEntry {
   lastError: string;
   /** Whether this sweep is terminal (should not be retried). */
   terminal: boolean;
+}
+
+/**
+ * Represents a sweep that has exhausted all retries and been moved to the dead-letter queue.
+ */
+export interface DeadLetterSweepEntry {
+  /** Unique identifier for the dead-letter entry. */
+  id: string;
+  /** Original sweep ID from the retry queue. */
+  originalSweepId: string;
+  /** Account ID being swept. */
+  accountId: string;
+  /** Total number of attempts made before moving to DLQ. */
+  totalAttempts: number;
+  /** Timestamp (ms) when the sweep was moved to the dead-letter queue. */
+  movedToDlqAt: number;
+  /** The last error message that caused the final failure. */
+  lastError: string;
+  /** Whether this dead-letter entry has been resolved manually. */
+  resolved: boolean;
+  /** Timestamp (ms) when this entry was resolved (if applicable). */
+  resolvedAt?: number;
+  /** Notes added by the operator during resolution (if applicable). */
+  resolutionNotes?: string;
 }
 
 /**
