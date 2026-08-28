@@ -11,6 +11,7 @@ import { Webhook } from './entities/webhook.entity.js';
 import { WebhookDelivery } from './entities/webhook-delivery.entity.js';
 import {
   makeWebhook,
+  makeWebhookDelivery,
   DEFAULT_WEBHOOK_URL as WEBHOOK_URL,
   DEFAULT_WEBHOOK_SECRET as WEBHOOK_SECRET,
 } from '../../testing/factories/webhook.factory.js';
@@ -53,6 +54,7 @@ describe('WebhooksService', () => {
       .mockImplementation((delivery) =>
         Promise.resolve({ id: 'delivery-uuid', ...delivery }),
       ),
+    find: jest.fn().mockResolvedValue([]),
   };
 
   beforeEach(async () => {
@@ -74,6 +76,7 @@ describe('WebhooksService', () => {
             get: jest.fn((key: string) => {
               if (key === 'app.webhookRetryAttempts') return 3;
               if (key === 'app.webhookTimeout') return 10_000;
+              if (key === 'app.webhookSustainedFailureThreshold') return 5;
               return undefined;
             }),
           },
@@ -487,6 +490,152 @@ describe('WebhooksService', () => {
           accountId: 'acc-save-err',
         }),
       ).resolves.not.toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // getHealth() — issue #495
+  // -------------------------------------------------------------------------
+
+  describe('getHealth()', () => {
+    it('throws NotFoundException when the webhook does not exist', async () => {
+      mockWebhookRepository.findOne.mockResolvedValue(null);
+
+      await expect(service.getHealth('missing-id')).rejects.toThrow(
+        'Webhook with ID missing-id not found',
+      );
+    });
+
+    it('reports isSustainedFailure=false when there are no deliveries yet', async () => {
+      const webhook = makeWebhook();
+      mockWebhookRepository.findOne.mockResolvedValue(webhook);
+      mockWebhookDeliveryRepository.find = jest.fn().mockResolvedValue([]);
+
+      const result = await service.getHealth(webhook.id);
+
+      expect(result).toMatchObject({
+        webhookId: webhook.id,
+        recentAttemptsChecked: 0,
+        consecutiveFailures: 0,
+        recentFailureRate: 0,
+        isSustainedFailure: false,
+        sustainedFailureThreshold: 5,
+        lastAttemptAt: null,
+        lastSuccessAt: null,
+      });
+    });
+
+    it('counts consecutive failures back from the most recent attempt and stops at the first success', async () => {
+      const webhook = makeWebhook();
+      mockWebhookRepository.findOne.mockResolvedValue(webhook);
+
+      // Most recent first (as the real DESC-ordered query returns them):
+      // 3 failures, then a success, then more failures further back.
+      const deliveries = [
+        makeWebhookDelivery({
+          id: 'd1',
+          deliveredAt: null,
+          createdAt: new Date('2026-01-05'),
+        }),
+        makeWebhookDelivery({
+          id: 'd2',
+          deliveredAt: null,
+          createdAt: new Date('2026-01-04'),
+        }),
+        makeWebhookDelivery({
+          id: 'd3',
+          deliveredAt: null,
+          createdAt: new Date('2026-01-03'),
+        }),
+        makeWebhookDelivery({
+          id: 'd4',
+          deliveredAt: new Date('2026-01-02'),
+          createdAt: new Date('2026-01-02'),
+        }),
+        makeWebhookDelivery({
+          id: 'd5',
+          deliveredAt: null,
+          createdAt: new Date('2026-01-01'),
+        }),
+      ];
+      mockWebhookDeliveryRepository.find = jest
+        .fn()
+        .mockResolvedValue(deliveries);
+
+      const result = await service.getHealth(webhook.id);
+
+      expect(result.recentAttemptsChecked).toBe(5);
+      expect(result.consecutiveFailures).toBe(3);
+      expect(result.recentFailureRate).toBe(4 / 5);
+      expect(result.isSustainedFailure).toBe(false); // 3 < default threshold of 5
+      expect(result.lastAttemptAt).toEqual(new Date('2026-01-05'));
+      expect(result.lastSuccessAt).toEqual(new Date('2026-01-02'));
+    });
+
+    it('reports isSustainedFailure=true once consecutive failures reach the threshold', async () => {
+      const webhook = makeWebhook();
+      mockWebhookRepository.findOne.mockResolvedValue(webhook);
+
+      const allFailed = Array.from({ length: 5 }, (_, i) =>
+        makeWebhookDelivery({
+          id: `fail-${i}`,
+          deliveredAt: null,
+          createdAt: new Date(2026, 0, 5 - i),
+        }),
+      );
+      mockWebhookDeliveryRepository.find = jest
+        .fn()
+        .mockResolvedValue(allFailed);
+
+      const result = await service.getHealth(webhook.id);
+
+      expect(result.consecutiveFailures).toBe(5);
+      expect(result.isSustainedFailure).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // getHealthSnapshotsForActiveWebhooks() — issue #495
+  // -------------------------------------------------------------------------
+
+  describe('getHealthSnapshotsForActiveWebhooks()', () => {
+    it('computes a snapshot per active webhook', async () => {
+      const webhookA = makeWebhook({ id: 'hook-a' });
+      const webhookB = makeWebhook({ id: 'hook-b' });
+      mockWebhookRepository.find.mockResolvedValue([webhookA, webhookB]);
+
+      mockWebhookDeliveryRepository.find = jest
+        .fn()
+        .mockImplementation(
+          ({ where }: { where: { subscriptionId: string } }) => {
+            if (where.subscriptionId === 'hook-a') {
+              return Promise.resolve(
+                Array.from({ length: 5 }, (_, i) =>
+                  makeWebhookDelivery({
+                    id: `a-${i}`,
+                    deliveredAt: null,
+                    createdAt: new Date(2026, 0, 5 - i),
+                  }),
+                ),
+              );
+            }
+            return Promise.resolve([
+              makeWebhookDelivery({
+                id: 'b-0',
+                deliveredAt: new Date('2026-01-05'),
+                createdAt: new Date('2026-01-05'),
+              }),
+            ]);
+          },
+        );
+
+      const results = await service.getHealthSnapshotsForActiveWebhooks();
+
+      expect(results).toHaveLength(2);
+      const hookA = results.find((r) => r.webhookId === 'hook-a');
+      const hookB = results.find((r) => r.webhookId === 'hook-b');
+      expect(hookA?.isSustainedFailure).toBe(true);
+      expect(hookB?.isSustainedFailure).toBe(false);
     });
   });
 

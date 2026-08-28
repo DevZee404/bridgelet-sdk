@@ -14,13 +14,21 @@ import { CreateWebhookDto } from './dto/create-webhook.dto.js';
 import { UpdateWebhookDto } from './dto/update-webhook.dto.js';
 import { WebhookResponseDto } from './dto/webhook-response.dto.js';
 import { WebhookDeliveriesResponseDto } from './dto/webhook-deliveries-response.dto.js';
+import { WebhookHealthResponseDto } from './dto/webhook-health-response.dto.js';
 import { WebhookDeliveryProvider } from './providers/webhook-delivery.provider.js';
+
+// Issue #495: number of most-recent delivery attempts inspected when
+// computing a subscription's health snapshot. Independent from the
+// sustained-failure threshold itself — this just bounds the query and
+// gives a stable denominator for the reported failure rate.
+const HEALTH_CHECK_WINDOW_SIZE = 20;
 
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
   private readonly maxRetries: number;
   private readonly requestTimeoutMs: number;
+  private readonly sustainedFailureThreshold: number;
 
   constructor(
     @InjectRepository(Webhook)
@@ -34,6 +42,10 @@ export class WebhooksService {
     this.requestTimeoutMs = configService.get<number>(
       'app.webhookTimeout',
       10_000,
+    );
+    this.sustainedFailureThreshold = configService.get<number>(
+      'app.webhookSustainedFailureThreshold',
+      5,
     );
   }
 
@@ -125,6 +137,87 @@ export class WebhooksService {
     return {
       data: deliveries,
       cursor: nextCursor,
+    };
+  }
+
+  /**
+   * Computes a delivery-health snapshot for a single webhook subscription
+   * from its most recent deliveries (issue #495).
+   */
+  async getHealth(id: string): Promise<WebhookHealthResponseDto> {
+    const webhook = await this.webhookRepository.findOne({ where: { id } });
+    if (!webhook) {
+      throw new NotFoundException(`Webhook with ID ${id} not found`);
+    }
+
+    const recentDeliveries = await this.deliveryRepository.find({
+      where: { subscriptionId: id },
+      order: { createdAt: 'DESC' },
+      take: HEALTH_CHECK_WINDOW_SIZE,
+    });
+
+    return this.buildHealthSnapshot(id, recentDeliveries);
+  }
+
+  /**
+   * Computes health snapshots for every active webhook, in one query per
+   * subscription. Used by the internal health monitor (issue #495) — kept
+   * on WebhooksService rather than duplicated so the monitor and the
+   * integrator-facing endpoint always agree on the same definition of
+   * "sustained failure".
+   */
+  async getHealthSnapshotsForActiveWebhooks(): Promise<
+    WebhookHealthResponseDto[]
+  > {
+    const webhooks = await this.webhookRepository.find({
+      where: { isActive: true },
+    });
+
+    const snapshots = await Promise.all(
+      webhooks.map(async (webhook) => {
+        const recentDeliveries = await this.deliveryRepository.find({
+          where: { subscriptionId: webhook.id },
+          order: { createdAt: 'DESC' },
+          take: HEALTH_CHECK_WINDOW_SIZE,
+        });
+        return this.buildHealthSnapshot(webhook.id, recentDeliveries);
+      }),
+    );
+
+    return snapshots;
+  }
+
+  private buildHealthSnapshot(
+    webhookId: string,
+    recentDeliveries: WebhookDelivery[],
+  ): WebhookHealthResponseDto {
+    let consecutiveFailures = 0;
+    let lastSuccessAt: Date | null = null;
+
+    for (const delivery of recentDeliveries) {
+      if (delivery.deliveredAt !== null) {
+        lastSuccessAt = delivery.deliveredAt;
+        break;
+      }
+      consecutiveFailures++;
+    }
+
+    const totalChecked = recentDeliveries.length;
+    const totalFailures = recentDeliveries.filter(
+      (d) => d.deliveredAt === null,
+    ).length;
+    const recentFailureRate =
+      totalChecked === 0 ? 0 : totalFailures / totalChecked;
+
+    return {
+      webhookId,
+      recentAttemptsChecked: totalChecked,
+      consecutiveFailures,
+      recentFailureRate,
+      isSustainedFailure: consecutiveFailures >= this.sustainedFailureThreshold,
+      sustainedFailureThreshold: this.sustainedFailureThreshold,
+      lastAttemptAt: recentDeliveries[0]?.createdAt ?? null,
+      lastSuccessAt,
     };
   }
 
