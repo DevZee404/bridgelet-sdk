@@ -199,6 +199,83 @@ Network determines:
 
 ### Common Issues
 
+## Operator Runbook: Resolving Dead-Lettered Sweeps
+
+### Overview
+When a sweep exhausts all automatic retry attempts (default: 5 retries with exponential backoff), it is moved to the **Dead-Letter Queue (DLQ)**. This requires immediate operator intervention to prevent funds from becoming permanently stuck on an ephemeral account.
+
+### Alerting
+You will receive alerts when:
+1. A sweep is moved to the DLQ (critical error logged with `ALERT:` prefix)
+2. The Prometheus metric `sweep_deadletter_total` increases
+3. The `deadLetterCount` (number of unresolved DLQ entries) is greater than 0 in monitoring dashboards
+
+### Step 1: Identify the Dead-Letter Entry
+1. List all unresolved dead-lettered sweeps:
+   ```bash
+   curl http://localhost:3000/api/sweeps/dead-letter
+   ```
+2. Retrieve detailed information about a specific entry:
+   ```bash
+   curl http://localhost:3000/api/sweeps/dead-letter/<DLQ_ENTRY_ID>
+   ```
+   This will return:
+   - The account ID affected
+   - Total number of attempts made
+   - Timestamp when it was moved to DLQ
+   - The last error message that caused failure
+   - The original sweep ID from the retry queue
+
+### Step 2: Diagnose the Root Cause
+Common causes for sweeps to reach the DLQ:
+1. **Horizon connectivity issues**: Temporary network problems that persisted longer than the retry window
+2. **Insufficient funds on destination account**: Destination couldn't accept the payment (e.g., missing minimum reserve)
+3. **Stellar network congestion**: Transactions were timing out repeatedly
+4. **Invalid destination address**: Destination address was incorrect or no longer exists
+5. **Asset support issues**: Destination account doesn't trust the asset being swept
+
+### Step 3: Manually Resolve the Sweep
+Once you've identified and fixed the root cause:
+
+1. **Option A: Retry the sweep manually**
+   - Re-execute the sweep using the original account details
+   - Verify the transaction succeeds on Stellar Explorer
+
+2. **Option B: Perform a manual rescue transaction**
+   - If the ephemeral account's secret key is still available, manually construct and submit a payment transaction from the ephemeral account to the destination
+   - Attempt the account merge operation to reclaim the minimum XLM reserve
+
+### Step 4: Mark the DLQ Entry as Resolved
+After successfully rescuing the funds:
+```bash
+curl -X PATCH http://localhost:3000/api/sweeps/dead-letter/<DLQ_ENTRY_ID>/resolve \
+  -H "Content-Type: application/json" \
+  -d '{
+    "resolutionNotes": "Manually submitted transaction, succeeded on ledger 123456789. Root cause: temporary Horizon outage."
+  }'
+```
+
+### Step 5: Verify Resolution
+- Confirm the DLQ entry is marked as resolved: `curl http://localhost:3000/api/sweeps/dead-letter/<DLQ_ENTRY_ID>`
+- Check that the Prometheus metric `sweep_deadletter_resolved_total` has increased
+- Verify funds are present in the destination account via Stellar Explorer
+
+### Preventive Measures
+After resolving a dead-lettered sweep:
+1. Investigate why the automatic retries failed to prevent recurrence
+2. Adjust retry parameters (max attempts, backoff timing) if needed
+3. Update monitoring thresholds if this was a systemic issue
+4. Document any new failure modes encountered in this runbook
+
+### API Reference for DLQ Operations
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/sweeps/dead-letter` | GET | List all unresolved dead-letter entries |
+| `/sweeps/dead-letter?includeResolved=true` | GET | List all entries including resolved ones |
+| `/sweeps/dead-letter/{id}` | GET | Get specific DLQ entry details |
+| `/sweeps/dead-letter/account/{accountId}` | GET | Get all DLQ entries for a specific account |
+| `/sweeps/dead-letter/{id}/resolve` | PATCH | Mark DLQ entry as resolved with optional notes |
+
 **Transaction Fails with "op_underfunded":**
 
 - Ephemeral account has insufficient XLM for fee
