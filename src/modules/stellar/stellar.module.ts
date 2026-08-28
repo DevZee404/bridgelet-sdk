@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { StellarService } from './stellar.service.js';
 import { SorobanEventsIndexerService } from './soroban-events-indexer.service.js';
 import { PaymentMonitorProvider } from './providers/payment-monitor-provider.js';
+import { FeeStrategyProvider } from './providers/fee-strategy.provider.js';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/account.entity.js';
 import { ContractEvent } from './entities/contract-event.entity.js';
@@ -18,12 +19,14 @@ const sorobanRpcLatencyHistogram = makeHistogramProvider({
     StellarService,
     SorobanEventsIndexerService,
     PaymentMonitorProvider,
+    FeeStrategyProvider,
     sorobanRpcLatencyHistogram,
   ],
   exports: [
     StellarService,
     SorobanEventsIndexerService,
     PaymentMonitorProvider,
+    FeeStrategyProvider,
   ],
 })
 export class StellarModule {}

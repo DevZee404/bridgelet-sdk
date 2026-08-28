@@ -6,6 +6,7 @@ import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Histogram } from 'prom-client';
 import { sanitizeErrorMessage } from '../../common/utils/secret-redaction.util.js';
 import { LogSanitizer } from '../../common/utils/log-sanitizer.util.js';
+import { FeeStrategyProvider } from './providers/fee-strategy.provider.js';
 
 export const EXPIRY_BUFFER_LEDGERS = 10;
 
