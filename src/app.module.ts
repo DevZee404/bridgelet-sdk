@@ -23,6 +23,7 @@ import { IntegratorsModule } from './modules/integrators/integrators.module.js';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware.js';
 import { CryptoModule } from './common/crypto/crypto.module.js';
 import { ApiKeyAuthGuard } from './common/guards/api-key-auth.guard.js';
+import { RolesGuard } from './common/guards/roles.guard.js';
 
 @Module({
   imports: [
@@ -64,6 +65,10 @@ import { ApiKeyAuthGuard } from './common/guards/api-key-auth.guard.js';
     {
       provide: APP_GUARD,
       useClass: ApiKeyAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
     },
   ],
 })

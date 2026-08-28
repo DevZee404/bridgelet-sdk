@@ -11,6 +11,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsStellarPublicKey } from '../../../common/validators/is-stellar-public-key.validator.js';
+import { IsMetadataWithinSize } from '../../../common/validators/is-metadata-size.validator.js';
 
 // 'native' should be added to regex in the future.
 const ASSET_CODE_REGEX = /^[A-Z0-9]{1,12}$/;
@@ -94,5 +95,6 @@ export class CreateAccountDto {
   })
   @IsOptional()
   @IsObject()
+  @IsMetadataWithinSize()
   metadata?: Record<string, any>;
 }

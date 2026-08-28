@@ -127,6 +127,35 @@ describe('AccountsService', () => {
       expect(result.status).toBe(AccountStatus.PENDING_PAYMENT);
     });
 
+    it('stamps the owning integratorId on the account', async () => {
+      const saved = makeAccount();
+      mockRepo.create.mockReturnValue(saved);
+      mockRepo.save.mockResolvedValue(saved);
+      mockStellarService.createEphemeralAccount.mockResolvedValue('txhash-abc');
+
+      await service.create(dto, 'integrator-1');
+
+      expect(mockRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ integratorId: 'integrator-1' }),
+      );
+    });
+
+    it('rejects native funding below the configured Stellar minimum reserve before any on-chain call', async () => {
+      const lowDto: CreateAccountDto = {
+        fundingSource: VALID_KEY2,
+        amount: '0.1',
+        asset_code: 'native',
+        expiresIn: 3600,
+      };
+
+      mockConfigService.get.mockReturnValue(0.5);
+
+      await expect(service.create(lowDto)).rejects.toThrow(
+        'Stellar minimum reserve',
+      );
+      expect(mockStellarService.createEphemeralAccount).not.toHaveBeenCalled();
+    });
+
     it('passes expiresIn to createEphemeralAccount for ledger conversion', async () => {
       const saved = makeAccount();
       mockRepo.create.mockReturnValue(saved);
@@ -193,8 +222,18 @@ describe('AccountsService', () => {
   // ─── findOne ─────────────────────────────────────────────────────────────
 
   describe('findOne', () => {
+    function makeQueryBuilder(account: Account | null) {
+      return {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(account),
+      };
+    }
+
     it('returns an AccountResponseDto for an existing account', async () => {
-      mockRepo.findOne.mockResolvedValue(makeAccount({ id: 'uuid-1' }));
+      mockRepo.createQueryBuilder.mockReturnValue(
+        makeQueryBuilder(makeAccount({ id: 'uuid-1' })),
+      );
 
       const result = await service.findOne('uuid-1');
 
@@ -202,17 +241,40 @@ describe('AccountsService', () => {
       expect(result.publicKey).toBe(VALID_KEY);
     });
 
+    it('scopes the lookup to the owning integrator when provided', async () => {
+      const qb = makeQueryBuilder(makeAccount({ id: 'uuid-1' }));
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findOne('uuid-1', 'integrator-1');
+
+      expect(qb.where).toHaveBeenCalledWith('account.id = :id', {
+        id: 'uuid-1',
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'account.integratorId = :integratorId',
+        { integratorId: 'integrator-1' },
+      );
+    });
+
     it('throws NotFoundException when account does not exist', async () => {
-      mockRepo.findOne.mockResolvedValue(null);
+      mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder(null));
 
       await expect(service.findOne('missing-id')).rejects.toThrow(
         NotFoundException,
       );
     });
 
+    it('returns NotFoundException (not 403) for cross-integrator access to hide existence', async () => {
+      mockRepo.createQueryBuilder.mockReturnValue(makeQueryBuilder(null));
+
+      await expect(
+        service.findOne('uuid-1', 'different-integrator'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
     it('returns null claimUrl when claimTokenHash is absent', async () => {
-      mockRepo.findOne.mockResolvedValue(
-        makeAccount({ id: 'uuid-1', claimTokenHash: null }),
+      mockRepo.createQueryBuilder.mockReturnValue(
+        makeQueryBuilder(makeAccount({ id: 'uuid-1', claimTokenHash: null })),
       );
 
       const result = await service.findOne('uuid-1');
@@ -221,8 +283,8 @@ describe('AccountsService', () => {
     });
 
     it('returns a masked claimUrl when claimTokenHash is present', async () => {
-      mockRepo.findOne.mockResolvedValue(
-        makeAccount({ id: 'uuid-1', claimTokenHash: 'abc' }),
+      mockRepo.createQueryBuilder.mockReturnValue(
+        makeQueryBuilder(makeAccount({ id: 'uuid-1', claimTokenHash: 'abc' })),
       );
 
       const result = await service.findOne('uuid-1');
@@ -231,16 +293,20 @@ describe('AccountsService', () => {
     });
 
     it('excludes soft-deleted accounts by default (no withDeleted flag)', async () => {
-      mockRepo.findOne.mockResolvedValue(makeAccount({ id: 'uuid-1' }));
+      const qb = makeQueryBuilder(makeAccount({ id: 'uuid-1' }));
+      mockRepo.createQueryBuilder.mockReturnValue(qb);
 
-      await service.findOne('uuid-1');
+      const result = await service.findOne('uuid-1');
 
-      expect(mockRepo.findOne).toHaveBeenCalledWith({
-        where: { id: 'uuid-1' },
+      expect(qb.where).toHaveBeenCalledWith('account.id = :id', {
+        id: 'uuid-1',
       });
+      expect(qb.andWhere).not.toHaveBeenCalled();
       expect(mockRepo.findOne).not.toHaveBeenCalledWith(
         expect.objectContaining({ withDeleted: true }),
       );
+      expect(result.accountId).toBe('uuid-1');
+      expect(qb.getOne).toHaveBeenCalled();
     });
   });
 

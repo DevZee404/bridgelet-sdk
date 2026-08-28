@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   Index,
 } from 'typeorm';
+import { IntegratorRole } from './integrator-role.enum.js';
 
 /**
  * A caller of the /accounts API (server-to-server, not a human end-user).
@@ -33,4 +34,11 @@ export class Integrator {
   /** Null = active. Set to revoke instantly without deleting the row. */
   @Column({ type: 'timestamptz', nullable: true })
   disabledAt: Date | null;
+
+  /** Access tier — determines which endpoints this key may call. */
+  @Column({
+    type: 'text',
+    default: IntegratorRole.Integrator,
+  })
+  role: IntegratorRole;
 }

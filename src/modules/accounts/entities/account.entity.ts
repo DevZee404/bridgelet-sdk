@@ -29,6 +29,10 @@ export class Account {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  @Index('IDX_accounts_integratorId')
+  integratorId: string | null;
+
   @Column({ type: 'varchar', length: 56, unique: true })
   @Index('IDX_accounts_publicKey')
   publicKey: string;
@@ -67,7 +71,13 @@ export class Account {
 
   @Column({ type: 'timestamp' })
   @Index('IDX_accounts_expiresAt')
-  expiresAt: Date; // Scheduled expiry time - set on creation, used by the expiry scheduler
+  /** Off-chain wall-clock expiry, set on creation and used by the expiry
+   * scheduler (`scheduler.service`), payment validation and token verification
+   * to gate access. Deliberately complementary to (not redundant with) the
+   * on-chain `expiry_ledger` held in the Soroban contract (issue #455/#456):
+   * `expiresAt` enforces expiry in the API layer, `expiry_ledger` is enforced
+   * by the contract on-chain. See `StellarService.toExpiryLedger`. */
+  expiresAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;
