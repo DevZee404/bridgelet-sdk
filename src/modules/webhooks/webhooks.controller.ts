@@ -24,6 +24,7 @@ import { CreateWebhookDto } from './dto/create-webhook.dto.js';
 import { UpdateWebhookDto } from './dto/update-webhook.dto.js';
 import { WebhookResponseDto } from './dto/webhook-response.dto.js';
 import { WebhookDeliveriesResponseDto } from './dto/webhook-deliveries-response.dto.js';
+import { WebhookHealthResponseDto } from './dto/webhook-health-response.dto.js';
 
 @ApiTags('webhooks')
 @ApiBearerAuth()
@@ -96,6 +97,24 @@ export class WebhooksController {
       fromDate,
       toDate,
     });
+  }
+
+  @Get(':id/health')
+  @ApiOperation({
+    summary:
+      "Check a webhook subscription's recent delivery health (issue #495)",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Delivery health snapshot for the subscription',
+    type: WebhookHealthResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 404, description: 'Webhook not found' })
+  public async getHealth(
+    @Param('id') id: string,
+  ): Promise<WebhookHealthResponseDto> {
+    return this.webhooksService.getHealth(id);
   }
 
   @Put(':id')
