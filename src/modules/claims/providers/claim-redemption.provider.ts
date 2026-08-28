@@ -14,6 +14,7 @@ import { ClaimRedemptionResponseDto } from '../dto/claim-redemption-response.dto
 import { SweepsService } from '../../sweeps/sweeps.service.js';
 import { TokenVerificationProvider } from './token-verification.provider.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
+import { assertValidAccountStatusTransition } from '../../accounts/enums/account-status-transitions.js';
 import { SecretEncryptionUtil } from '../../../common/crypto/secret-encryption.util.js';
 import { KmsKeyProvider } from '../../../common/crypto/kms-key.provider.js';
 import { ConfigService } from '@nestjs/config';
@@ -145,6 +146,10 @@ export class ClaimRedemptionProvider {
         }
 
         const wasPartial = locked.status === AccountStatus.PARTIAL_SWEEP;
+        assertValidAccountStatusTransition(
+          locked.status,
+          AccountStatus.CLAIMING,
+        );
         locked.status = AccountStatus.CLAIMING;
         locked.destinationAddress = destinationAddress;
         await manager.save(locked);
@@ -195,6 +200,10 @@ export class ClaimRedemptionProvider {
       // (with skipContractAuth=true). Surface this as a non-error response
       // (status=200, success=false, isPartial=true) so callers can decide.
       if (sweepResult.isPartial) {
+        assertValidAccountStatusTransition(
+          account.status,
+          AccountStatus.PARTIAL_SWEEP,
+        );
         await this.accountsRepository.update(account.id, {
           status: AccountStatus.PARTIAL_SWEEP,
           destinationAddress: '',
@@ -235,6 +244,10 @@ export class ClaimRedemptionProvider {
       // Atomically record the claim and mark account as CLAIMED
       const claim = await this.dataSource.transaction(
         async (manager: EntityManager) => {
+          assertValidAccountStatusTransition(
+            account.status,
+            AccountStatus.CLAIMED,
+          );
           account.status = AccountStatus.CLAIMED;
           account.claimedAt = new Date();
           await manager.save(account);

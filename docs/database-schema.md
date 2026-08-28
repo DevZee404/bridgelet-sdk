@@ -8,7 +8,12 @@ The current schema is created entirely through the migrations in `src/database/m
 - `claims`: stores completed claim records and references `accounts.id` through a cascading foreign key on `accountId`.
 - `webhooks`: stores outbound webhook subscriptions.
 - `webhook_deliveries`: stores per-delivery webhook attempts, including the subscribed webhook reference (`subscription_id`), event type, payload hash, retry count, last response details, delivery timestamp, and creation timestamp. It references `webhooks.id` with `ON DELETE CASCADE` and has a composite index on (`subscription_id`, `created_at`).
-- `contract_events`: stores indexed Soroban contract events, including event type, contract address, ledger sequence, transaction hash, event payload, and creation timestamp.
+- `contract_events`: stores events indexed by `SorobanEventsIndexerService` from
+  `STELLAR_SOROBAN_RPC_URL`. The service polls every
+  `STELLAR_CONTRACT_EVENT_POLL_INTERVAL_MS` milliseconds (30,000 by default),
+  resumes after the greatest stored ledger, and falls back to Horizon `/events`
+  when Soroban RPC is unavailable. It records `AccountCreated`,
+  `PaymentReceived`, `SweepExecutedMulti`, and `AccountExpired` events.
 
 ## Account Status Enum
 
@@ -68,6 +73,12 @@ Settings are passed to the underlying `pg` Pool constructor via the TypeORM `ext
 | Index name              | Columns    | Query served                        |
 | ----------------------- | ---------- | ----------------------------------- |
 | `IDX_webhooks_isActive` | `isActive` | Filter active webhook subscriptions |
+
+### contract_events
+
+| Index name                    | Columns                                     | Query served                                                 |
+| ----------------------------- | ------------------------------------------- | ------------------------------------------------------------ |
+| `UQ_contract_events_identity` | `event_type`, `contract_address`, `tx_hash` | Prevents duplicate inserts when RPC polling retries an event |
 
 ### Index design notes (EXPLAIN ANALYZE audit)
 

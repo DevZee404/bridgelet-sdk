@@ -29,6 +29,25 @@ function assertNetworkConfig(): void {
   }
 }
 
+/**
+ * Decides whether the Swagger UI (/api/docs) should be exposed.
+ *
+ * The interactive Swagger UI reveals the full REST surface, request/response
+ * schemas and internal field names — valuable reconnaissance for an attacker.
+ * In production it is disabled by default; expose it explicitly only when
+ * needed via ENABLE_SWAGGER=true (or mount it behind authentication).
+ */
+function isSwaggerEnabled(): boolean {
+  const nodeEnv = process.env.NODE_ENV;
+  const enableSwagger = process.env.ENABLE_SWAGGER;
+
+  if (nodeEnv === 'production' && enableSwagger !== 'true') {
+    return false;
+  }
+
+  return true;
+}
+
 async function bootstrap() {
   assertNetworkConfig();
 
@@ -72,22 +91,31 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  const config = new DocumentBuilder()
-    .setTitle('Bridgelet SDK API')
-    .setDescription('Ephemeral account management API for Stellar')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .addApiKey({ type: 'apiKey', name: 'X-API-Key', in: 'header' }, 'X-API-Key')
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  const enableSwagger = isSwaggerEnabled();
+
+  if (enableSwagger) {
+    const config = new DocumentBuilder()
+      .setTitle('Bridgelet SDK API')
+      .setDescription('Ephemeral account management API for Stellar')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .addApiKey(
+        { type: 'apiKey', name: 'X-API-Key', in: 'header' },
+        'X-API-Key',
+      )
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = process.env.PORT || 3000;
   void app.listen(port);
 
   const bootstrapLogger = new Logger('Bootstrap');
   bootstrapLogger.log(`Bridgelet SDK running on http://localhost:${port}`);
-  bootstrapLogger.log(`API Documentation: http://localhost:${port}/api/docs`);
+  if (enableSwagger) {
+    bootstrapLogger.log(`API Documentation: http://localhost:${port}/api/docs`);
+  }
 }
 
 bootstrap().catch(console.error);

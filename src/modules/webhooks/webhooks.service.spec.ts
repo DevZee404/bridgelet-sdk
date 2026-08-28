@@ -2,8 +2,10 @@ import * as crypto from 'crypto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { WebhookEvent } from './webhook-events.enum.js';
 import { WebhooksService } from './webhooks.service.js';
+import { WebhookDeliveryProvider } from './providers/webhook-delivery.provider.js';
 import { Webhook } from './entities/webhook.entity.js';
 import { WebhookDelivery } from './entities/webhook-delivery.entity.js';
 import {
@@ -25,6 +27,7 @@ function expectedSignature(body: string, secret: string | null): string {
 
 describe('WebhooksService', () => {
   let service: WebhooksService;
+  let deliveryProvider: WebhookDeliveryProvider;
   let loggerErrorSpy: jest.SpyInstance;
 
   const mockQb = {
@@ -55,6 +58,7 @@ describe('WebhooksService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WebhooksService,
+        WebhookDeliveryProvider,
         {
           provide: getRepositoryToken(Webhook),
           useValue: mockWebhookRepository,
@@ -63,10 +67,23 @@ describe('WebhooksService', () => {
           provide: getRepositoryToken(WebhookDelivery),
           useValue: mockWebhookDeliveryRepository,
         },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === 'app.webhookRetryAttempts') return 3;
+              if (key === 'app.webhookTimeout') return 10_000;
+              return undefined;
+            }),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<WebhooksService>(WebhooksService);
+    deliveryProvider = module.get<WebhookDeliveryProvider>(
+      WebhookDeliveryProvider,
+    );
 
     loggerErrorSpy = jest
       .spyOn(Logger.prototype, 'error')
@@ -210,7 +227,7 @@ describe('WebhooksService', () => {
       mockWebhookRepository.findOne.mockResolvedValue(webhook);
 
       const deliverSpy = jest
-        .spyOn(service as any, 'deliver')
+        .spyOn(deliveryProvider, 'deliver')
         .mockResolvedValue(undefined);
 
       await service.test(webhook.id);
@@ -218,7 +235,13 @@ describe('WebhooksService', () => {
       expect(mockWebhookRepository.findOne).toHaveBeenCalledWith({
         where: { id: webhook.id },
       });
-      expect(deliverSpy).toHaveBeenCalledWith(webhook, 'webhook.test', {});
+      expect(deliverSpy).toHaveBeenCalledWith(
+        webhook,
+        'webhook.test',
+        {},
+        3,
+        10_000,
+      );
     });
 
     it('throws NotFoundException when the webhook does not exist', async () => {
@@ -411,8 +434,59 @@ describe('WebhooksService', () => {
       );
 
       await expect(
-        service.triggerEvent('sweep.completed', { accountId: 'acc-err-logs' }),
+        service.triggerEvent(WebhookEvent.SweepCompleted, {
+          accountId: 'acc-save-err',
+        }),
       ).resolves.not.toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // event coverage audit — keeps docs/webhook-events.md in sync with code
+  // -------------------------------------------------------------------------
+
+  describe('documented event coverage', () => {
+    const documentedLiveEvents = [
+      WebhookEvent.AccountCreated,
+      WebhookEvent.AccountExpired,
+      WebhookEvent.SweepCompleted,
+      WebhookEvent.SweepPartial,
+      WebhookEvent.SweepFailed,
+      WebhookEvent.WebhookTest,
+    ] as const;
+
+    it('every live event documented in docs/webhook-events.md is a real enum value', () => {
+      for (const event of documentedLiveEvents) {
+        expect(Object.values(WebhookEvent)).toContain(event);
+      }
+    });
+
+    it('triggerEvent accepts and delivers every documented live event without throwing', async () => {
+      const webhook = makeWebhook();
+      mockQb.getMany.mockResolvedValue([webhook]);
+      jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('ok'),
+      } as Response);
+
+      for (const event of documentedLiveEvents) {
+        await expect(
+          service.triggerEvent(event, { accountId: 'audit-account' }),
+        ).resolves.not.toThrow();
+      }
+    });
+
+    it('documents exactly the reserved (non-firing) events as future-only', () => {
+      const reservedEvents = [
+        WebhookEvent.AccountClaimed,
+        WebhookEvent.PaymentReceived,
+      ];
+      // These must not be part of the live set tracked above, matching the
+      // docs' "Planned / Reserved for future use" status.
+      for (const event of reservedEvents) {
+        expect(documentedLiveEvents).not.toContain(event);
+      }
     });
   });
 });
