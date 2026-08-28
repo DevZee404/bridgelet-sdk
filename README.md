@@ -191,6 +191,27 @@ npm run load:accounts
 
 This test sends 50 concurrent `POST /accounts` requests using unique integrator API keys and verifies the endpoint remains responsive under burst load.
 
+The claim-redemption (sweep) path — a much heavier operation that triggers
+on-chain sweep transactions — has its own burst test. Seed ephemeral accounts
+in `PENDING_CLAIM` with valid claim tokens:
+
+```bash
+npm run load:claims:seed -- 50
+```
+
+Then run the burst test against a locally running server:
+
+```bash
+npm run load:claims
+```
+
+This sends 50 concurrent `POST /claims/redeem` requests and reports the
+success/failure rate and latency distribution. Note that `POST /claims/redeem`
+is throttled at 5 requests/min/IP, so simultaneous arrivals exercise the
+throttle as well as the reconcile/locking path under burst; for a pure
+un-throttled sweep burst run the requests from distinct clients (or disable the
+throttle in a load-test profile).
+
 ### Local sandbox integration
 
 The repository includes a local sandbox integration test for the Bridgelet contract flow in `test/accounts-local-sandbox.e2e-spec.ts`.
