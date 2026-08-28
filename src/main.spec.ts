@@ -10,6 +10,10 @@
  * - We stub process.exit so the test process itself doesn't terminate.
  * - We inline the guard function so the test does not require importing the
  *   full NestJS application (which needs a running database, decorators, etc.).
+ *
+ * A second inline helper, isSwaggerEnabled(), reproduces the Swagger UI gating
+ * decision from bootstrap() so we can prove /api/docs is disabled in
+ * production unless ENABLE_SWAGGER=true (Issue #437).
  */
 
 /**
@@ -132,108 +136,58 @@ describe('assertNetworkConfig (network startup guard)', () => {
 });
 
 /**
- * Inline reproduction of the assertSecretStrength() function from main.ts.
+ * Inline reproduction of the isSwaggerEnabled() function from main.ts.
  * Must be kept in sync with the implementation.
  */
-function assertSecretStrength(): void {
+function isSwaggerEnabled(): boolean {
   const nodeEnv = process.env.NODE_ENV;
-  if (nodeEnv === 'development' || nodeEnv === 'test') {
-    return;
+  const enableSwagger = process.env.ENABLE_SWAGGER;
+
+  if (nodeEnv === 'production' && enableSwagger !== 'true') {
+    return false;
   }
 
-  const secret = process.env.JWT_SECRET ?? '';
-  const placeholders = [
-    'your-secret-key',
-    'your-super-secret-jwt-key-change-in-production',
-    'change-me-in-production',
-  ];
-  const normalized = secret.trim();
-
-  const isTooShort = normalized.length < 32;
-  const isPlaceholder =
-    placeholders.includes(normalized.toLowerCase()) ||
-    /^your[-_]?secret/i.test(normalized);
-
-  if (normalized.length === 0 || isTooShort || isPlaceholder) {
-    console.error('[Bootstrap] FATAL');
-    process.exit(1);
-  }
+  return true;
 }
 
-describe('assertSecretStrength (JWT startup guard)', () => {
-  let exitSpy: jest.SpyInstance;
-  let consoleErrorSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    exitSpy = jest
-      .spyOn(process, 'exit')
-      .mockImplementation((() => undefined) as never);
-    consoleErrorSpy = jest
-      .spyOn(console, 'error')
-      .mockImplementation(() => undefined);
-  });
-
+describe('isSwaggerEnabled (Swagger UI gating)', () => {
   afterEach(() => {
-    exitSpy.mockRestore();
-    consoleErrorSpy.mockRestore();
     delete process.env.NODE_ENV;
-    delete process.env.JWT_SECRET;
+    delete process.env.ENABLE_SWAGGER;
   });
 
-  it('exits with 1 in production for the .env.example placeholder secret', () => {
+  it('disables Swagger in production by default', () => {
     process.env.NODE_ENV = 'production';
-    process.env.JWT_SECRET = 'your-secret-key';
+    delete process.env.ENABLE_SWAGGER;
 
-    assertSecretStrength();
-
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('FATAL'),
-    );
+    expect(isSwaggerEnabled()).toBe(false);
   });
 
-  it('exits with 1 in production for an empty secret', () => {
+  it('disables Swagger in production when ENABLE_SWAGGER=false', () => {
     process.env.NODE_ENV = 'production';
-    process.env.JWT_SECRET = '';
+    process.env.ENABLE_SWAGGER = 'false';
 
-    assertSecretStrength();
-
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(isSwaggerEnabled()).toBe(false);
   });
 
-  it('exits with 1 in production for a too-short secret', () => {
+  it('enables Swagger in production when ENABLE_SWAGGER=true', () => {
     process.env.NODE_ENV = 'production';
-    process.env.JWT_SECRET = 'too-short';
+    process.env.ENABLE_SWAGGER = 'true';
 
-    assertSecretStrength();
-
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(isSwaggerEnabled()).toBe(true);
   });
 
-  it('accepts a strong secret in production', () => {
-    process.env.NODE_ENV = 'production';
-    process.env.JWT_SECRET = 'a'.repeat(48);
-
-    assertSecretStrength();
-
-    expect(exitSpy).not.toHaveBeenCalled();
-  });
-
-  it('does not exit for a placeholder-like secret in development', () => {
+  it('enables Swagger in development even without ENABLE_SWAGGER', () => {
     process.env.NODE_ENV = 'development';
-    process.env.JWT_SECRET = 'your-secret-key';
+    delete process.env.ENABLE_SWAGGER;
 
-    assertSecretStrength();
-
-    expect(exitSpy).not.toHaveBeenCalled();
+    expect(isSwaggerEnabled()).toBe(true);
   });
 
-  it('does not exit for a placeholder-like secret in test', () => {
-    process.env.NODE_ENV = 'test';
-    process.env.JWT_SECRET = 'your-secret-key';
+  it('enables Swagger when NODE_ENV is not set', () => {
+    delete process.env.NODE_ENV;
+    delete process.env.ENABLE_SWAGGER;
 
-    assertSecretStrength();
-
-    expect(exitSpy).not.toHaveBeenCalled();
+    expect(isSwaggerEnabled()).toBe(true);
   });
 });

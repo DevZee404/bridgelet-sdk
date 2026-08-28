@@ -22,8 +22,17 @@ export default registerAs('stellar', () => {
     sorobanRpcUrl:
       process.env.STELLAR_SOROBAN_RPC_URL ||
       'https://soroban-testnet.stellar.org',
+    contractEventPollIntervalMs: parseInt(
+      process.env.STELLAR_CONTRACT_EVENT_POLL_INTERVAL_MS || '30000',
+      10,
+    ),
     fundingSecret: process.env.FUNDING_ACCOUNT_SECRET,
     recoveryPublic: process.env.RECOVERY_ACCOUNT_PUBLIC,
+    // Minimum XLM (or asset-equivalent) an ephemeral account must be funded
+    // with to clear the Stellar base reserve. Sourced from network config (not
+    // hardcoded) because the reserve can change. Defaults to 0.5 XLM (2
+    // operations x 0.25 base reserve).
+    minimumReserveXlm: parseFloat(process.env.STELLAR_MIN_RESERVE_XLM ?? '0.5'),
     contracts: {
       ephemeralAccount: process.env.EPHEMERAL_ACCOUNT_CONTRACT_ID,
       sweepController:

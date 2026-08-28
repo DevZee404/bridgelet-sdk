@@ -11,6 +11,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsStellarPublicKey } from '../../../common/validators/is-stellar-public-key.validator.js';
+import { IsMetadataWithinSize } from '../../../common/validators/is-metadata-size.validator.js';
 
 // 'native' should be added to regex in the future.
 const ASSET_CODE_REGEX = /^[A-Z0-9]{1,12}$/;
@@ -83,8 +84,17 @@ export class CreateAccountDto {
   @Max(2592000) // 30 days
   expiresIn: number;
 
-  @ApiProperty({ example: { userId: 'user_123' }, required: false })
+  @ApiProperty({
+    example: { userId: 'user_123' },
+    required: false,
+    description:
+      'Optional JSON object metadata. Must be a plain JSON object and ' +
+      'serialise to at most 4 KB (4096 bytes). Any top-level keys matching ' +
+      'known PII identifiers (email, phone, name, address, SSN, etc.) are ' +
+      'stripped before storage. See issue #462.',
+  })
   @IsOptional()
   @IsObject()
+  @IsMetadataWithinSize()
   metadata?: Record<string, any>;
 }

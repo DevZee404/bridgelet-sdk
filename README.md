@@ -6,7 +6,7 @@
 
 > 🚧 **MVP — Active Development:** encryptSecret() — base64, not real encryption, must be replaced before any production deployment
 > 🚧 **The expiresIn → expiry_ledger conversion** — needs verification or explicit documentation of where it happens
-> 🚧 **Webhook coverage gaps**.
+> 🚧 **Webhook coverage gaps**..
 
 ## Overview
 
@@ -25,19 +25,24 @@ The following services/imports are currently **commented out** to allow `npm run
 ### How to Find Temporary Changes:
 
 1. Search the codebase for comments containing `TEMPORARY:` to locate all commented-out code that needs restoration..
+2. **Every `TEMPORARY:` comment MUST reference a linked GitHub issue** using the
+   format `TEMPORARY: <reason> (issue #NNN)`. This is enforced by CI (see
+   `.github/workflows/ci.yml`), so a temporary workaround can never silently
+   become permanent. Track restoration in the linked issue. There are currently
+   **zero** `TEMPORARY:` comments in the codebase (issue #458).
 
-2. **Secret Encryption** (`src/modules/accounts/accounts.service.ts`)
+3. **Secret Encryption** (`src/modules/accounts/accounts.service.ts`)
    - **Current:** Base64 encoding (NOT encryption)
    - **Impact:** Ephemeral secret keys are not protected at rest
    - **Required:** AES-256-GCM or KMS-backed encryption before any deployment
      with real funds
 
-3. **Ledger Expiry Conversion**
+4. **Ledger Expiry Conversion**
    - `CreateAccountDto.expiresIn` (seconds) is not yet converted to
      `expiry_ledger` (u32 ledger sequence) required by the contract
    - `expiresAt` Date is currently unused in `StellarService`
    - Conversion formula: `current_ledger + (expiresIn / 5)`
-4. **Sweep Authorization Signature** (`src/modules/sweeps/providers/contract.provider.ts`)
+5. **Sweep Authorization Signature** (`src/modules/sweeps/providers/contract.provider.ts`)
    - **Current:** `generateAuthSignature()` produces a fake 64-byte stub signature
    - **Works because:** `EphemeralAccount.verify_sweep_authorization()` in `bridgelet-core`
      is also a stub that accepts any signature (documented in bridgelet-core README)
@@ -255,16 +260,44 @@ STELLAR_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
 JWT_SECRET=your-secret-key
 CLAIM_TOKEN_EXPIRY=2592000  # 30 days
 
+# Stellar funding / sweep secrets (high privilege — see Deployment Guide)
+FUNDING_ACCOUNT_SECRET=...
+RECOVERY_ACCOUNT_PUBLIC=G...
+SWEEP_SIGNING_KEY_SEED=...
+ENCRYPTION_KEY=your-64-char-hex-string
+
 # Application
 PORT=3000
 NODE_ENV=development
+# Swagger UI (/api/docs) — disabled by default in production. Set to 'true' to expose it.
+# Never enable in production unless the endpoint is behind authentication.
+ENABLE_SWAGGER=false
 ```
+
+> **High-privilege secrets:** `FUNDING_ACCOUNT_SECRET`, `SWEEP_SIGNING_KEY_SEED`,
+> `JWT_SECRET`, and `ENCRYPTION_KEY` control accounts that can move or authorise
+> real funds. In production these must be supplied from a secrets manager
+> (AWS Secrets Manager / SSM, Vault, KMS-backed injection, etc.) — **not** a
+> plain `.env` value — and must never be committed or logged. See the
+> [Deployment Guide](./docs/deployment.md) for secure storage, rotation, and
+> balance-monitoring guidance for the funding account.
+>
+> `JWT_SECRET` must be a strong, random value of **at least 32 characters**.
+> In non-development environments (`NODE_ENV=production`, `staging`, etc.) the
+> application **refuses to start** if `JWT_SECRET` is empty, shorter than 32
+> characters, or a known placeholder such as `your-secret-key`.
 
 ## API Documentation
 
 Once running, access API docs at:
 
 - Swagger: `http://localhost:3000/api/docs`
+
+> **Production note:** the Swagger UI (`/api/docs`) is disabled by default when
+> `NODE_ENV=production`. A publicly reachable Swagger UI would expose the full
+> REST surface, request/response schemas and potential internal field names to
+> anyone who finds the URL. To opt in explicitly (e.g. for a private,
+> authenticated staging deployment) set `ENABLE_SWAGGER=true`.
 
 ## Key Endpoints
 
@@ -276,6 +309,20 @@ GET /webhooks # List webhook subscriptions
 POST /webhooks # Subscribe to events
 PUT /webhooks/:id # Update webhook subscription (e.g. URL, events)
 DELETE /webhooks/:id # Delete webhook subscription
+
+## Metadata (issue #462)
+
+`POST /accounts` accepts an optional `metadata` JSON object for integration
+bookkeeping (e.g. `userId`, `orderId`). Constraints:
+
+- Must be a **plain JSON object** (arrays and primitives are rejected).
+- Must serialise to at most **4 KB** (4096 bytes) — larger payloads are rejected.
+- Any top-level key matching a known PII identifier (`email`, `phone`, `name`,
+  `address`, `ssn`, `dob`, `passport`, `taxid`, etc.) is **stripped before
+  storage**. PII is never persisted.
+
+Validation is applied on write only, so existing metadata is unaffected
+retroactively.
 
 ## Database Schema
 
@@ -303,23 +350,23 @@ npm run format
 
 All pull requests are validated automatically for branch naming and PR title format.
 
-- During the initial rollout, checks run in warning mode until **2026-02-27**.
-- After that date, pull requests are blocked until naming issues are fixed.
+- During the initial rollout, checks ran in **warning mode** until **2026-02-27**.
+- Since then, enforcement is active: pull requests are **blocked** until naming issues are fixed (verified 2026-08-27, and the workflow below still blocks on non-conforming names/titles).
 
 ### Branch Name Format
 
 Accepted pattern:
 
-`(fix|feature|test|chore|docs)/issue-NUMBER-brief-description`
+`(<conventional-type>)/brief-description`
 
 Regex used by CI:
 
-`^(fix|feature|test|chore|docs)/issue-[0-9]+-[a-z0-9-]+$`
+`^(fix|feature|feat|test|chore|docs|refactor|ref|hotfix|release|ci|build|revert)/[a-z0-9-]+$`
 
 Examples:
 
-- `fix/issue-42-jwt-error-handling`
-- `feature/issue-50-webhook-service`
+- `fix/jwt-error-handling`
+- `feature/webhook-service`
 
 `main` and `develop` are exempt for release/hotfix workflows.
 
@@ -327,24 +374,25 @@ Examples:
 
 Accepted pattern:
 
-`(Fix|Feature|Test|Chore|Docs): Brief description (#NUMBER)`
+`<conventional-type>: Brief description`
 
 Regex used by CI:
 
-`^(Fix|Feature|Test|Chore|Docs): .+ \(#[0-9]+\)$`
+`^(fix|feature|feat|test|chore|docs|refactor|ref|hotfix|release|ci|build|revert): .+$`
 
 Examples:
 
-- `Fix: Handle JWT errors in TokenVerificationProvider (#42)`
-- `Test: Add unit tests for ClaimLookupProvider (#43)`
+- `fix: Handle JWT errors in TokenVerificationProvider`
+- `test: Add unit tests for ClaimLookupProvider`
+- `feature: Implement WebhooksService`
 
 ### How To Fix A Branch Name
 
 Rename your local branch and push the new branch:
 
 ```bash
-git branch -m fix/issue-42-jwt-error-handling
-git push origin -u fix/issue-42-jwt-error-handling
+git branch -m fix/jwt-error-handling
+git push origin -u fix/jwt-error-handling
 ```
 
 Then update the PR to use the renamed branch. If needed, close the old PR and open a new one from the renamed branch.
@@ -364,6 +412,7 @@ See [Deployment Guide](./docs/deployment.md) for production setup.
 
 ## Documentation
 
+- [Getting Started](./docs/getting-started.md)
 - [API Reference](./docs/api-reference.md)
 - [Database Schema](./docs/database-schema.md)
 - [Webhook Events](./docs/webhook-events.md)
@@ -371,7 +420,7 @@ See [Deployment Guide](./docs/deployment.md) for production setup.
 
 Visit http://localhost:3000/api/docs for API documentation.
 
-See [Getting Started Guide](../docs/getting-started.pdf) for full setup instructions.
+See [Getting Started Guide](./docs/getting-started.md) for full setup instructions.
 
 ## Support
 

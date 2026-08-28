@@ -20,6 +20,7 @@ import { NestFactory } from '@nestjs/core';
 import databaseConfig from '../config/database.config.js';
 import { IntegratorsModule } from '../modules/integrators/integrators.module.js';
 import { IntegratorsService } from '../modules/integrators/integrators.service.js';
+import { IntegratorRole } from '../modules/integrators/entities/integrator-role.enum.js';
 
 @Module({
   imports: [
@@ -42,12 +43,17 @@ class CreateIntegratorModule {}
 
 async function main(): Promise<void> {
   const name = process.argv[2];
+  const roleArg = process.argv[3] as IntegratorRole | undefined;
   if (!name) {
     process.stderr.write(
-      'Usage: npm run create:integrator -- "<integrator name>"\n',
+      'Usage: npm run create:integrator -- "<name>" [admin|integrator]\n',
     );
     process.exit(2);
   }
+  const role =
+    roleArg === IntegratorRole.Admin
+      ? IntegratorRole.Admin
+      : IntegratorRole.Integrator;
 
   const app = await NestFactory.createApplicationContext(
     CreateIntegratorModule,
@@ -58,7 +64,10 @@ async function main(): Promise<void> {
 
   try {
     const integratorsService = app.get(IntegratorsService);
-    const { integrator, rawApiKey } = await integratorsService.create(name);
+    const { integrator, rawApiKey } = await integratorsService.create(
+      name,
+      role,
+    );
 
     process.stdout.write(
       `\nIntegrator created.\n` +

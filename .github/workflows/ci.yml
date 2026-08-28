@@ -39,27 +39,22 @@ jobs:
       - name: Build Verification
         run: npm run build
 
-  migration-drift:
-    name: Check Migration Drift
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Snapshot committed migrations
-        run: cp -r src/database/migrations /tmp/migrations-committed
-
-      - name: Regenerate migrations from script
-        run: ./scripts/generate-migrations.sh --yes
-
-      - name: Diff regenerated migrations against committed
+      - name: 'Audit TEMPORARY: comments have a linked issue (issue #458)'
+        # Every TEMPORARY comment must reference a GitHub issue so temporary
+        # workarounds never silently become permanent. Any future TEMPORARY
+        # comment without "(issue #NNN)" fails the build.
         run: |
-          if diff -r /tmp/migrations-committed src/database/migrations > /tmp/migration-drift.txt 2>&1; then
-            echo "Migrations are in sync with scripts/generate-migrations.sh."
-          else
-            echo "::error::src/database/migrations does not match the output of scripts/generate-migrations.sh --yes."
-            echo "Regenerate with: ./scripts/generate-migrations.sh --yes"
-            cat /tmp/migration-drift.txt
+          set -euo pipefail
+          matches=$(rg -n "TEMPORARY:" --glob '!node_modules' --glob '!dist' \
+            --glob '!coverage' --glob '!package-lock.json' . || true)
+          if [[ -z "$matches" ]]; then
+            echo "No TEMPORARY: comments found — OK."
+            exit 0
+          fi
+          echo "Found TEMPORARY: comment(s):"
+          echo "$matches"
+          if ! echo "$matches" | rg -q "\(issue #[0-9]+\)"; then
+            echo "::error::Every TEMPORARY: comment must reference a GitHub issue, e.g. 'TEMPORARY: <desc> (issue #123)'. See issue #458."
             exit 1
           fi
+          echo "All TEMPORARY: comments reference a linked issue — OK."

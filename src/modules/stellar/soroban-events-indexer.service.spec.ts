@@ -151,6 +151,39 @@ describe('SorobanEventsIndexerService', () => {
   });
 
   describe('pollEvents', () => {
+    it('ignores a duplicate-key error from a concurrent poller', async () => {
+      const rawRpcEvents: RawSorobanEvent[] = [
+        {
+          type: 'contract',
+          topic: ['AccountCreated'],
+          contractId: 'C1',
+          ledgerSequence: 10,
+          txHash: '1'.repeat(64),
+        },
+      ];
+
+      jest
+        .spyOn(service, 'fetchEventsFromRpc')
+        .mockResolvedValueOnce(rawRpcEvents);
+      mockContractEventRepository.findOne.mockResolvedValueOnce(null);
+      mockContractEventRepository.save.mockRejectedValueOnce({ code: '23505' });
+
+      await expect(service.pollEvents()).resolves.toEqual([]);
+    });
+
+    it('resumes polling after the latest stored ledger', async () => {
+      const pollSpy = jest
+        .spyOn(service, 'pollEvents')
+        .mockResolvedValueOnce([]);
+      mockContractEventRepository.findOne.mockResolvedValueOnce({
+        ledgerSequence: '42',
+      });
+
+      await service.pollLatestEvents();
+
+      expect(pollSpy).toHaveBeenCalledWith(43);
+    });
+
     it('fetches events via RPC, parses, deduplicates and saves them', async () => {
       const rawRpcEvents: RawSorobanEvent[] = [
         {
