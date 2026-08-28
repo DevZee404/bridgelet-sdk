@@ -86,3 +86,55 @@ See "Rotating `FUNDING_ACCOUNT_SECRET`" above. Because account creation reads
 the secret on every call via the config layer, a restart with a new key is
 sufficient; no data migration is required. In-flight operations should be
 drained (or allowed to fail and retry) before switching.
+
+## Database Backup and Point-in-Time Restore
+
+### Backup strategy
+
+The Bridgelet SDK stores all ephemeral account state, claim tokens, webhook subscriptions,
+and audit logs in PostgreSQL. A backup failure can result in irrecoverable data loss for
+in-flight financial operations.
+
+**Recommended configuration:**
+
+| Parameter | Recommended value |
+|-----------|------------------|
+| Full backup frequency | Daily |
+| WAL archiving (PITR) | Continuous |
+| Backup retention | 30 days |
+| RPO target | < 5 minutes |
+| RTO target | < 1 hour |
+
+### Taking a backup (pg_dump)
+
+```bash
+pg_dump -h $DATABASE_HOST -U $DATABASE_USER -d $DATABASE_NAME \
+  --format=custom --compress=9 \
+  -f "bridgelet-$(date +%Y%m%d-%H%M%S).dump"
+```
+
+Store the `.dump` file in a separate region from the primary database (e.g. S3 cross-region replication).
+
+### Point-in-time restore procedure
+
+1. **Identify the target time** — determine the exact timestamp to restore to.
+2. **Provision a fresh PostgreSQL instance** at the same major version as production.
+3. **Restore the most recent full backup:**
+   ```bash
+   pg_restore -h <new-host> -U postgres -d bridgelet_restore \
+     --no-owner --no-privileges bridgelet-<timestamp>.dump
+   ```
+4. **Apply WAL segments** up to the target time (if using continuous archiving or cloud PITR).
+5. **Verify schema integrity:** run `npm run migration:show` against the restored database.
+6. **Smoke-test** by querying a known account and confirming its status is correct.
+7. **Switch traffic** to the restored instance once verified.
+
+### Managed service PITR
+
+If running on AWS RDS, Azure Database for PostgreSQL, or Google Cloud SQL, enable the
+platform's built-in PITR feature with a retention window of at least 7 days.
+
+### RPO / RTO expectations
+
+- **RPO:** < 5 minutes with WAL archiving enabled.
+- **RTO:** < 1 hour for datasets up to ~10 GB; test your actual restore time during a maintenance window and record the measured result here.
