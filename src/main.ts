@@ -30,6 +30,47 @@ function assertNetworkConfig(): void {
 }
 
 /**
+ * Guards against booting a non-development deployment with a weak or
+ * placeholder JWT_SECRET. Claim authentication is signed with JWT_SECRET, so a
+ * guessable/copy-pasted value would let an attacker forge claim tokens and
+ * redeem (sweep) ephemeral accounts without the legitimate claim flow.
+ *
+ * The check runs before the NestJS application is created and only acts in
+ * non-development environments (e.g. production, staging), where a weak secret
+ * is unacceptable. Development environments are not blocked so contributors can
+ * run locally with the .env.example placeholder.
+ */
+function assertSecretStrength(): void {
+  const nodeEnv = process.env.NODE_ENV;
+  if (nodeEnv === 'development' || nodeEnv === 'test') {
+    return;
+  }
+
+  const secret = process.env.JWT_SECRET ?? '';
+  const placeholders = [
+    'your-secret-key',
+    'your-super-secret-jwt-key-change-in-production',
+    'change-me-in-production',
+  ];
+  const normalized = secret.trim();
+
+  const isTooShort = normalized.length < 32;
+  const isPlaceholder =
+    placeholders.includes(normalized.toLowerCase()) ||
+    /^your[-_]?secret/i.test(normalized);
+
+  if (normalized.length === 0 || isTooShort || isPlaceholder) {
+    console.error(
+      '[Bootstrap] FATAL: JWT_SECRET is missing, too short (< 32 chars), or a ' +
+        'known placeholder value. Refusing to start in NODE_ENV=' +
+        (nodeEnv ?? 'unset') +
+        '. Set a strong, random JWT_SECRET (>= 32 chars) before deploying.',
+    );
+    process.exit(1);
+  }
+}
+
+/**
  * Decides whether the Swagger UI (/api/docs) should be exposed.
  *
  * The interactive Swagger UI reveals the full REST surface, request/response

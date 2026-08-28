@@ -58,3 +58,28 @@ jobs:
             exit 1
           fi
           echo "All TEMPORARY: comments reference a linked issue — OK."
+
+  migration-drift:
+    name: Check Migration Drift
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Snapshot committed migrations
+        run: cp -r src/database/migrations /tmp/migrations-committed
+
+      - name: Regenerate migrations from script
+        run: ./scripts/generate-migrations.sh --yes
+
+      - name: Diff regenerated migrations against committed
+        run: |
+          if diff -r /tmp/migrations-committed src/database/migrations > /tmp/migration-drift.txt 2>&1; then
+            echo "Migrations are in sync with scripts/generate-migrations.sh."
+          else
+            echo "::error::src/database/migrations does not match the output of scripts/generate-migrations.sh --yes."
+            echo "Regenerate with: ./scripts/generate-migrations.sh --yes"
+            cat /tmp/migration-drift.txt
+            exit 1
+          fi
