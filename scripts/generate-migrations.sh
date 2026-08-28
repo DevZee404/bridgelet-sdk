@@ -579,9 +579,7 @@ export class AddContractEventIdentity1718100008000 implements MigrationInterface
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX "UQ_contract_events_identity"`,
-    );
+    await queryRunner.query(`DROP INDEX "UQ_contract_events_identity"`);
   }
 }
 MIGRATION_EOF
@@ -708,5 +706,5 @@ export class AddRoleToIntegratorsTable1718100010000 implements MigrationInterfac
 }
 MIGRATION_EOF
 
-echo "Done. Wrote 15 migration files to $MIGRATIONS_DIR."
+echo "Done. Wrote $(find "$MIGRATIONS_DIR" -maxdepth 1 -name '*.ts' | wc -l) migration files to $MIGRATIONS_DIR."
 echo "Run 'npm run migration:run' to apply them, or 'npm run migration:show' to check status."

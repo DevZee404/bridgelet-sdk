@@ -26,4 +26,3 @@ This directory contains standardized runbooks and operational procedures for mai
 - [Handle Overlapping Payment Monitor Ticks](./handle-overlapping-payment-monitor-ticks.md) — Use when validating or investigating overlapping payment-monitor work.
 - [Triage Index](./triage-index.md) — Use as the quickest entry point when the right incident procedure is unclear.
 - [Validate Asset Address Resolution](./validate-asset-address-resolution.md) — Use before enabling an asset or investigating an asset-address mismatch.
-

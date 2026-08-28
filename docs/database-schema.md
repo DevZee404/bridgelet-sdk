@@ -71,8 +71,8 @@ Settings are passed to the underlying `pg` Pool constructor via the TypeORM `ext
 
 ### contract_events
 
-| Index name | Columns | Query served |
-| --- | --- | --- |
+| Index name                    | Columns                                     | Query served                                                                |
+| ----------------------------- | ------------------------------------------- | --------------------------------------------------------------------------- |
 | `UQ_contract_events_identity` | `event_type`, `contract_address`, `tx_hash` | Prevent duplicate event ingestion across RPC retries and concurrent pollers |
 
 ### Index design notes (EXPLAIN ANALYZE audit)

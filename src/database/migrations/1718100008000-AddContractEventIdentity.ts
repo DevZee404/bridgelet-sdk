@@ -11,8 +11,6 @@ export class AddContractEventIdentity1718100008000 implements MigrationInterface
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `DROP INDEX "UQ_contract_events_identity"`,
-    );
+    await queryRunner.query(`DROP INDEX "UQ_contract_events_identity"`);
   }
 }
