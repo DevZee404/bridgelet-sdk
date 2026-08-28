@@ -234,6 +234,9 @@ export class WebhooksService {
       isActive: webhook.isActive,
       description: webhook.description,
       lastTriggeredAt: webhook.lastTriggeredAt,
+      hasFailedDeliveries: webhook.hasFailedDeliveries,
+      consecutiveFailures: webhook.consecutiveFailures,
+      lastFailedAt: webhook.lastFailedAt,
       createdAt: webhook.createdAt,
     };
   }
