@@ -260,3 +260,25 @@ If you notice issues outside your scope, open a separate issue instead.
 ---
 
 **Thank you for helping improve Bridgelet SDK!** 🚀
+
+### Test Data Factories
+
+Shared factory utilities for constructing valid test entities live in `src/testing/factories/`. Use them in unit and integration tests to avoid duplicating setup code:
+
+```typescript
+import { makeAccount, makeClaim, makeWebhook } from '../../testing/factories/index.js';
+
+// Create a test account with defaults
+const account = makeAccount();
+
+// Override specific fields
+const expiredAccount = makeAccount({ status: AccountStatus.EXPIRED });
+
+// Create a claim linked to the account
+const claim = makeClaim({ accountId: account.id });
+
+// Create a webhook subscription
+const webhook = makeWebhook({ url: 'https://example.com/hook' });
+```
+
+All factories accept an optional partial override object. Sensible defaults are provided for all required fields. See `src/testing/factories/` for available factories and their default values.
