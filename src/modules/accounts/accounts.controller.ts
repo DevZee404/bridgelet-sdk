@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -21,7 +22,12 @@ import { CreateAccountDto } from './dto/create-account.dto.js';
 import { AccountResponseDto } from './dto/account-response.dto.js';
 import { AccountsListResponseDto } from './dto/accounts-list-response.dto.js';
 import { AccountStatus } from './enums/account-status.enum.js';
-import { ApiKeyAuthGuard } from '../../common/guards/api-key-auth.guard.js';
+import {
+  ApiKeyAuthGuard,
+  type AuthenticatedRequest,
+} from '../../common/guards/api-key-auth.guard.js';
+import { Roles } from '../../common/decorators/roles.decorator.js';
+import { IntegratorRole } from '../../modules/integrators/entities/integrator-role.enum.js';
 
 @ApiTags('accounts')
 @ApiSecurity('X-API-Key')
@@ -55,8 +61,9 @@ export class AccountsController {
   @ApiBody({ type: CreateAccountDto })
   public async create(
     @Body() createAccountDto: CreateAccountDto,
+    @Req() req: AuthenticatedRequest,
   ): Promise<AccountResponseDto> {
-    return this.accountsService.create(createAccountDto);
+    return this.accountsService.create(createAccountDto, req.integratorId);
   }
 
   @Get(':id')
@@ -79,11 +86,15 @@ export class AccountsController {
     description:
       'Rate limit exceeded — requests are throttled to protect funding flows',
   })
-  public async findOne(@Param('id') id: string): Promise<AccountResponseDto> {
-    return this.accountsService.findOne(id);
+  public async findOne(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ): Promise<AccountResponseDto> {
+    return this.accountsService.findOne(id, req.integratorId);
   }
 
   @Get()
+  @Roles(IntegratorRole.Admin)
   @ApiOperation({
     summary: 'List ephemeral accounts (Admin)',
     description:

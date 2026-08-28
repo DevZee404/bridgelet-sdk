@@ -142,6 +142,10 @@ export class CreateClaimsTable1718100001000 implements MigrationInterface {
     await queryRunner.query(
       `CREATE INDEX "IDX_claims_accountId" ON "claims" ("accountId")`,
     );
+    await queryRunner.query(`
+      COMMENT ON COLUMN "claims"."sweepTxHash" IS
+      'Stellar transaction hash of the sweep. Always a 64-character hex string — never a placeholder value. Enforced by TransactionHashValidator before record creation.'
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
@@ -591,5 +595,97 @@ export class CreateIntegratorsTable1718100009000 implements MigrationInterface {
 }
 MIGRATION_EOF
 
-echo "Done. Wrote 12 migration files to $MIGRATIONS_DIR."
+cat > "$MIGRATIONS_DIR/1718100008500-AddIntegratorIdToAccountsTable.ts" <<'MIGRATION_EOF'
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * Add integrator ownership to accounts.
+ *
+ * Each ephemeral account is created by an integrator (authenticated via
+ * X-API-Key). Stamping `integratorId` on every account is the first step in
+ * enforcing per-integrator data isolation (see issue #468) and lets the
+ * accounts controller deny lookups from a different integrator without
+ * leaking whether an account exists.
+ *
+ * The column is nullable so migration time and pre-existing rows (created
+ * before this column existed) remain valid; they simply belong to no
+ * integrator and are only reachable by the list/all path.
+ */
+export class AddIntegratorIdToAccountsTable1718100008500 implements MigrationInterface {
+  name = 'AddIntegratorIdToAccountsTable1718100008500';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      ALTER TABLE "accounts"
+        ADD COLUMN "integratorId" uuid NULL
+    `);
+
+    await queryRunner.query(`
+      CREATE INDEX "IDX_accounts_integratorId" ON "accounts" ("integratorId")
+    `);
+
+    await queryRunner.query(`
+      ALTER TABLE "accounts"
+        ADD CONSTRAINT "FK_accounts_integratorId"
+        FOREIGN KEY ("integratorId")
+        REFERENCES "integrators"("id")
+        ON DELETE SET NULL
+    `);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      ALTER TABLE "accounts" DROP CONSTRAINT "FK_accounts_integratorId"
+    `);
+
+    await queryRunner.query(`
+      DROP INDEX "IDX_accounts_integratorId"
+    `);
+
+    await queryRunner.query(`
+      ALTER TABLE "accounts" DROP COLUMN "integratorId"
+    `);
+  }
+}
+MIGRATION_EOF
+
+cat > "$MIGRATIONS_DIR/1718100010000-AddContractEventIdentityIndex.ts" <<'MIGRATION_EOF'
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+export class AddContractEventIdentityIndex1718100010000 implements MigrationInterface {
+  name = 'AddContractEventIdentityIndex1718100010000';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE UNIQUE INDEX "UQ_contract_events_identity"
+      ON "contract_events" ("event_type", "contract_address", "tx_hash")
+    `);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP INDEX "UQ_contract_events_identity"`);
+  }
+}
+MIGRATION_EOF
+
+cat > "$MIGRATIONS_DIR/1718100010000-AddRoleToIntegratorsTable.ts" <<'MIGRATION_EOF'
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+export class AddRoleToIntegratorsTable1718100010000 implements MigrationInterface {
+  name = 'AddRoleToIntegratorsTable1718100010000';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      ALTER TABLE "integrators"
+      ADD COLUMN "role" text NOT NULL DEFAULT 'integrator'
+    `);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`ALTER TABLE "integrators" DROP COLUMN "role"`);
+  }
+}
+MIGRATION_EOF
+
+echo "Done. Wrote 15 migration files to $MIGRATIONS_DIR."
 echo "Run 'npm run migration:run' to apply them, or 'npm run migration:show' to check status."

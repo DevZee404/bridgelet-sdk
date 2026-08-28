@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Logger,
   ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
@@ -13,6 +14,7 @@ import { ClaimRedemptionResponseDto } from '../dto/claim-redemption-response.dto
 import { SweepsService } from '../../sweeps/sweeps.service.js';
 import { TokenVerificationProvider } from './token-verification.provider.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
+import { assertValidAccountStatusTransition } from '../../accounts/enums/account-status-transitions.js';
 import { SecretEncryptionUtil } from '../../../common/crypto/secret-encryption.util.js';
 import { KmsKeyProvider } from '../../../common/crypto/kms-key.provider.js';
 import { ConfigService } from '@nestjs/config';
@@ -76,6 +78,33 @@ export class ClaimRedemptionProvider {
           }
         }
       }
+
+      // Log expired / invalid-token redemption attempts to the claim audit
+      // log (migration 1718100008000). The token may be stale or the account
+      // expired even though it was issued earlier, so re-validate expiry at
+      // redeem-time (independent of issuance) and surface the rejection.
+      // Only record when we can resolve the account — an unknown token hash
+      // has no account to attribute the attempt to.
+      if (error instanceof UnauthorizedException) {
+        const accountByHash = await this.accountsRepository.findOne({
+          where: { claimTokenHash: tokenHash },
+        });
+        if (accountByHash) {
+          this.claimAuditProvider
+            .record({
+              accountId: accountByHash.id,
+              destination: destinationAddress,
+              ip,
+              outcome: 'failure',
+              failureReason:
+                error instanceof Error ? error.message : 'Claim token rejected',
+            })
+            .catch(() => {
+              // Audit logging must never mask the original rejection.
+            });
+        }
+      }
+
       throw error;
     }
 
@@ -117,6 +146,10 @@ export class ClaimRedemptionProvider {
         }
 
         const wasPartial = locked.status === AccountStatus.PARTIAL_SWEEP;
+        assertValidAccountStatusTransition(
+          locked.status,
+          AccountStatus.CLAIMING,
+        );
         locked.status = AccountStatus.CLAIMING;
         locked.destinationAddress = destinationAddress;
         await manager.save(locked);
@@ -167,6 +200,10 @@ export class ClaimRedemptionProvider {
       // (with skipContractAuth=true). Surface this as a non-error response
       // (status=200, success=false, isPartial=true) so callers can decide.
       if (sweepResult.isPartial) {
+        assertValidAccountStatusTransition(
+          account.status,
+          AccountStatus.PARTIAL_SWEEP,
+        );
         await this.accountsRepository.update(account.id, {
           status: AccountStatus.PARTIAL_SWEEP,
           destinationAddress: '',
@@ -207,6 +244,10 @@ export class ClaimRedemptionProvider {
       // Atomically record the claim and mark account as CLAIMED
       const claim = await this.dataSource.transaction(
         async (manager: EntityManager) => {
+          assertValidAccountStatusTransition(
+            account.status,
+            AccountStatus.CLAIMED,
+          );
           account.status = AccountStatus.CLAIMED;
           account.claimedAt = new Date();
           await manager.save(account);

@@ -2,6 +2,7 @@ import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ApiKeyAuthGuard, AuthenticatedRequest } from './api-key-auth.guard.js';
 import { IntegratorsService } from '../../modules/integrators/integrators.service.js';
 import { Integrator } from '../../modules/integrators/entities/integrator.entity.js';
+import { IntegratorRole } from '../../modules/integrators/entities/integrator-role.enum.js';
 
 const mockExecutionContext = (apiKey?: string): ExecutionContext => {
   const request = {
@@ -20,6 +21,7 @@ const mockIntegrator = (): Integrator => ({
   apiKeyHash: 'hash',
   createdAt: new Date(),
   disabledAt: null,
+  role: IntegratorRole.Integrator,
 });
 
 describe('ApiKeyAuthGuard', () => {

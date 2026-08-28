@@ -258,6 +258,21 @@ export class StellarService {
   /**
    * Converts a seconds-based expiry duration to a Stellar ledger sequence number.
    * Adds a small buffer (10 ledgers) to account for submission latency.
+   *
+   * Formula (issue #455): `expiry_ledger = current_ledger + ceil(expiresInSeconds / 5)`
+   * The `/5` divisor assumes Stellar closes a ledger approximately every 5
+   * seconds. This is a network-level approximation: if the actual average
+   * ledger-close time drifts materially from 5s (e.g. prolonged congestion or
+   * network outages), the wall-clock expiry implied by the derived ledger will
+   * differ from the real elapsed time. The 10-ledger buffer covers small
+   * deviations; operators monitoring long-lived accounts should account for
+   * drift when estimating actual expiry time from a ledger sequence.
+   *
+   * This wall-clock `expiresAt` field on the account is intentionally separate
+   * from this on-chain ledger number: `expiresAt` drives the off-chain expiry
+   * scheduler and validation checks (see #456), while the ledger number is
+   * enforced by the Soroban contract on-chain. They are complementary, not
+   * redundant.
    */
   async toExpiryLedger(expiresInSeconds: number): Promise<number> {
     const currentLedger = await this.getCurrentLedger();
