@@ -163,6 +163,14 @@ export class StellarService {
     }
   }
 
+  async getAccountBalance(accountId: string): Promise<string> {
+    const account = await this.getActiveHorizonServer().loadAccount(accountId);
+    const nativeBalance = account.balances.find(
+      (b: any) => b.asset_type === 'native',
+    );
+    return nativeBalance ? nativeBalance.balance : '0';
+  }
+
   /**
    * Clears the cached ledger sequence, forcing the next call to
    * {@link getCurrentLedger} to fetch a fresh value from Horizon.

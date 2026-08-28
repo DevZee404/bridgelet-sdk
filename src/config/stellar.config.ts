@@ -35,5 +35,17 @@ export default registerAs('stellar', () => {
     sweepControllerContractId:
       process.env.STELLAR_SWEEP_CONTROLLER_CONTRACT_ID ||
       process.env.SWEEP_CONTROLLER_CONTRACT_ID,
+    fundingAccountBalanceCheckIntervalMs: parseInt(
+      process.env.FUNDING_ACCOUNT_BALANCE_CHECK_INTERVAL_MS || '300000',
+      10,
+    ),
+    fundingAccountLowBalanceThreshold: parseInt(
+      process.env.FUNDING_ACCOUNT_LOW_BALANCE_THRESHOLD || '5000000',
+      10,
+    ),
+    fundingAccountCriticalBalanceThreshold: parseInt(
+      process.env.FUNDING_ACCOUNT_CRITICAL_BALANCE_THRESHOLD || '1000000',
+      10,
+    ),
   };
 });
