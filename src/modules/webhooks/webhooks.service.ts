@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import {
   FindManyOptions,
   LessThan,
@@ -18,13 +19,22 @@ import { WebhookDeliveriesResponseDto } from './dto/webhook-deliveries-response.
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
+  private readonly maxRetries: number;
+  private readonly requestTimeoutMs: number;
 
   constructor(
     @InjectRepository(Webhook)
     private readonly webhookRepository: Repository<Webhook>,
     @InjectRepository(WebhookDelivery)
     private readonly deliveryRepository: Repository<WebhookDelivery>,
-  ) {}
+    configService: ConfigService,
+  ) {
+    this.maxRetries = configService.get<number>('app.webhookRetryAttempts', 3);
+    this.requestTimeoutMs = configService.get<number>(
+      'app.webhookTimeout',
+      10_000,
+    );
+  }
 
   async create(dto: CreateWebhookDto): Promise<WebhookResponseDto> {
     const webhook = this.webhookRepository.create({
@@ -205,7 +215,6 @@ export class WebhooksService {
     webhook: Webhook,
     eventType: string,
     payload: Record<string, unknown>,
-    maxRetries = 3,
   ): Promise<void> {
     const deliveryId = crypto.randomUUID();
     const body = JSON.stringify({
@@ -228,6 +237,7 @@ export class WebhooksService {
     const accountId =
       typeof rawAccountId === 'string' ? rawAccountId : 'unknown';
 
+    const maxRetries = this.maxRetries;
     let attemptCount = 0;
     let success = false;
     let lastResponseCode: number | null = null;
@@ -236,7 +246,10 @@ export class WebhooksService {
     while (attemptCount < maxRetries && !success) {
       attemptCount++;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+      const timeoutId = setTimeout(
+        () => controller.abort(),
+        this.requestTimeoutMs,
+      );
 
       try {
         const response = await fetch(webhook.url, {
