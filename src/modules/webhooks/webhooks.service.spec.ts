@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WebhookEvent } from './webhook-events.enum.js';
+import { WEBHOOK_PAYLOAD_SCHEMA_VERSION } from './webhook-schema-version.js';
 import { WebhooksService } from './webhooks.service.js';
 import { WebhookDeliveryProvider } from './providers/webhook-delivery.provider.js';
 import { Webhook } from './entities/webhook.entity.js';
@@ -316,6 +317,54 @@ describe('WebhooksService', () => {
       await expect(
         service.triggerEvent('sweep.completed', { accountId: 'acc-789' }),
       ).resolves.not.toThrow();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // triggerEvent — payload schema version (issue #494)
+  // -------------------------------------------------------------------------
+
+  describe('triggerEvent() — payload schema version', () => {
+    it('includes the current schema version on every outbound payload', async () => {
+      const webhook = makeWebhook();
+      mockQb.getMany.mockResolvedValue([webhook]);
+
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('ok'),
+      } as Response);
+
+      await service.triggerEvent(WebhookEvent.SweepCompleted, {
+        accountId: 'acc-version-test',
+      });
+
+      const [, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+      const sentBody = JSON.parse(init.body) as Record<string, unknown>;
+      expect(sentBody.version).toBe(WEBHOOK_PAYLOAD_SCHEMA_VERSION);
+    });
+
+    it('does not let caller-supplied payload fields override the schema version', async () => {
+      const webhook = makeWebhook();
+      mockQb.getMany.mockResolvedValue([webhook]);
+
+      const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('ok'),
+      } as Response);
+
+      // A payload should never legitimately carry its own `version`, but
+      // this guards against a future call site accidentally colliding
+      // with the reserved field name.
+      await service.triggerEvent(WebhookEvent.SweepCompleted, {
+        accountId: 'acc-version-collision',
+        version: 999,
+      });
+
+      const [, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+      const sentBody = JSON.parse(init.body) as Record<string, unknown>;
+      expect(sentBody.version).toBe(WEBHOOK_PAYLOAD_SCHEMA_VERSION);
     });
   });
 

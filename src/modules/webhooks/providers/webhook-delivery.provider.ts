@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { Webhook } from '../entities/webhook.entity.js';
 import { WebhookDelivery } from '../entities/webhook-delivery.entity.js';
+import { WEBHOOK_PAYLOAD_SCHEMA_VERSION } from '../webhook-schema-version.js';
 
 /**
  * Handles the transport side of webhook delivery: HMAC signing, the HTTP POST
@@ -40,6 +41,9 @@ export class WebhookDeliveryProvider {
       id: deliveryId,
       event: eventType,
       ...payload,
+      // Placed last so a caller-supplied payload can never shadow it —
+      // this field is reserved for the schema version (issue #494).
+      version: WEBHOOK_PAYLOAD_SCHEMA_VERSION,
     });
     const payloadHash = crypto.createHash('sha256').update(body).digest('hex');
 
