@@ -5,6 +5,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WebhookEvent } from './webhook-events.enum.js';
 import { WebhooksService } from './webhooks.service.js';
+import { WebhookDeliveryProvider } from './providers/webhook-delivery.provider.js';
 import { Webhook } from './entities/webhook.entity.js';
 import { WebhookDelivery } from './entities/webhook-delivery.entity.js';
 import {
@@ -26,6 +27,7 @@ function expectedSignature(body: string, secret: string | null): string {
 
 describe('WebhooksService', () => {
   let service: WebhooksService;
+  let deliveryProvider: WebhookDeliveryProvider;
   let loggerErrorSpy: jest.SpyInstance;
 
   const mockQb = {
@@ -56,6 +58,7 @@ describe('WebhooksService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WebhooksService,
+        WebhookDeliveryProvider,
         {
           provide: getRepositoryToken(Webhook),
           useValue: mockWebhookRepository,
@@ -78,6 +81,9 @@ describe('WebhooksService', () => {
     }).compile();
 
     service = module.get<WebhooksService>(WebhooksService);
+    deliveryProvider = module.get<WebhookDeliveryProvider>(
+      WebhookDeliveryProvider,
+    );
 
     loggerErrorSpy = jest
       .spyOn(Logger.prototype, 'error')
@@ -221,7 +227,7 @@ describe('WebhooksService', () => {
       mockWebhookRepository.findOne.mockResolvedValue(webhook);
 
       const deliverSpy = jest
-        .spyOn(service as any, 'deliver')
+        .spyOn(deliveryProvider, 'deliver')
         .mockResolvedValue(undefined);
 
       await service.test(webhook.id);
@@ -229,7 +235,13 @@ describe('WebhooksService', () => {
       expect(mockWebhookRepository.findOne).toHaveBeenCalledWith({
         where: { id: webhook.id },
       });
-      expect(deliverSpy).toHaveBeenCalledWith(webhook, 'webhook.test', {});
+      expect(deliverSpy).toHaveBeenCalledWith(
+        webhook,
+        'webhook.test',
+        {},
+        3,
+        10_000,
+      );
     });
 
     it('throws NotFoundException when the webhook does not exist', async () => {

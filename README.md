@@ -243,6 +243,9 @@ ENCRYPTION_KEY=your-64-char-hex-string
 # Application
 PORT=3000
 NODE_ENV=development
+# Swagger UI (/api/docs) — disabled by default in production. Set to 'true' to expose it.
+# Never enable in production unless the endpoint is behind authentication.
+ENABLE_SWAGGER=false
 ```
 
 > **High-privilege secrets:** `FUNDING_ACCOUNT_SECRET`, `SWEEP_SIGNING_KEY_SEED`,
@@ -263,6 +266,12 @@ NODE_ENV=development
 Once running, access API docs at:
 
 - Swagger: `http://localhost:3000/api/docs`
+
+> **Production note:** the Swagger UI (`/api/docs`) is disabled by default when
+> `NODE_ENV=production`. A publicly reachable Swagger UI would expose the full
+> REST surface, request/response schemas and potential internal field names to
+> anyone who finds the URL. To opt in explicitly (e.g. for a private,
+> authenticated staging deployment) set `ENABLE_SWAGGER=true`.
 
 ## Key Endpoints
 
@@ -301,23 +310,23 @@ npm run format
 
 All pull requests are validated automatically for branch naming and PR title format.
 
-- During the initial rollout, checks run in warning mode until **2026-02-27**.
-- After that date, pull requests are blocked until naming issues are fixed.
+- During the initial rollout, checks ran in **warning mode** until **2026-02-27**.
+- Since then, enforcement is active: pull requests are **blocked** until naming issues are fixed (verified 2026-08-27, and the workflow below still blocks on non-conforming names/titles).
 
 ### Branch Name Format
 
 Accepted pattern:
 
-`(fix|feature|test|chore|docs)/issue-NUMBER-brief-description`
+`(<conventional-type>)/brief-description`
 
 Regex used by CI:
 
-`^(fix|feature|test|chore|docs)/issue-[0-9]+-[a-z0-9-]+$`
+`^(fix|feature|feat|test|chore|docs|refactor|ref|hotfix|release|ci|build|revert)/[a-z0-9-]+$`
 
 Examples:
 
-- `fix/issue-42-jwt-error-handling`
-- `feature/issue-50-webhook-service`
+- `fix/jwt-error-handling`
+- `feature/webhook-service`
 
 `main` and `develop` are exempt for release/hotfix workflows.
 
@@ -325,24 +334,25 @@ Examples:
 
 Accepted pattern:
 
-`(Fix|Feature|Test|Chore|Docs): Brief description (#NUMBER)`
+`<conventional-type>: Brief description`
 
 Regex used by CI:
 
-`^(Fix|Feature|Test|Chore|Docs): .+ \(#[0-9]+\)$`
+`^(fix|feature|feat|test|chore|docs|refactor|ref|hotfix|release|ci|build|revert): .+$`
 
 Examples:
 
-- `Fix: Handle JWT errors in TokenVerificationProvider (#42)`
-- `Test: Add unit tests for ClaimLookupProvider (#43)`
+- `fix: Handle JWT errors in TokenVerificationProvider`
+- `test: Add unit tests for ClaimLookupProvider`
+- `feature: Implement WebhooksService`
 
 ### How To Fix A Branch Name
 
 Rename your local branch and push the new branch:
 
 ```bash
-git branch -m fix/issue-42-jwt-error-handling
-git push origin -u fix/issue-42-jwt-error-handling
+git branch -m fix/jwt-error-handling
+git push origin -u fix/jwt-error-handling
 ```
 
 Then update the PR to use the renamed branch. If needed, close the old PR and open a new one from the renamed branch.
@@ -362,6 +372,7 @@ See [Deployment Guide](./docs/deployment.md) for production setup.
 
 ## Documentation
 
+- [Getting Started](./docs/getting-started.md)
 - [API Reference](./docs/api-reference.md)
 - [Database Schema](./docs/database-schema.md)
 - [Webhook Events](./docs/webhook-events.md)
@@ -369,7 +380,7 @@ See [Deployment Guide](./docs/deployment.md) for production setup.
 
 Visit http://localhost:3000/api/docs for API documentation.
 
-See [Getting Started Guide](../docs/getting-started.pdf) for full setup instructions.
+See [Getting Started Guide](./docs/getting-started.md) for full setup instructions.
 
 ## Support
 

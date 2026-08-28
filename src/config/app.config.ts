@@ -9,4 +9,5 @@ export default registerAs('app', () => ({
   webhookRetryAttempts: parseInt(process.env.WEBHOOK_RETRY_ATTEMPTS ?? '3', 10),
   webhookTimeout: parseInt(process.env.WEBHOOK_TIMEOUT ?? '10000', 10),
   logLevel: process.env.LOG_LEVEL ?? 'info',
+  enableSwagger: process.env.ENABLE_SWAGGER === 'true',
 }));
