@@ -3,6 +3,7 @@ import {
   BadRequestException,
   Logger,
   ConflictException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository, InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource, EntityManager } from 'typeorm';
@@ -77,6 +78,33 @@ export class ClaimRedemptionProvider {
           }
         }
       }
+
+      // Log expired / invalid-token redemption attempts to the claim audit
+      // log (migration 1718100008000). The token may be stale or the account
+      // expired even though it was issued earlier, so re-validate expiry at
+      // redeem-time (independent of issuance) and surface the rejection.
+      // Only record when we can resolve the account — an unknown token hash
+      // has no account to attribute the attempt to.
+      if (error instanceof UnauthorizedException) {
+        const accountByHash = await this.accountsRepository.findOne({
+          where: { claimTokenHash: tokenHash },
+        });
+        if (accountByHash) {
+          this.claimAuditProvider
+            .record({
+              accountId: accountByHash.id,
+              destination: destinationAddress,
+              ip,
+              outcome: 'failure',
+              failureReason:
+                error instanceof Error ? error.message : 'Claim token rejected',
+            })
+            .catch(() => {
+              // Audit logging must never mask the original rejection.
+            });
+        }
+      }
+
       throw error;
     }
 

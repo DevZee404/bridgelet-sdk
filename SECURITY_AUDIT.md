@@ -85,3 +85,88 @@ SSE subscription to Stellar Horizon for inbound payment monitoring is fully impl
 ### Conclusion
 
 Fully implemented with comprehensive test coverage in `payment-monitor-provider.spec.ts`.
+
+---
+
+## Issue #469 — Claim Token Generation Entropy
+
+### Summary
+
+Claim tokens gate real fund movement: redeeming a token moves the ephemeral
+account's funds to the supplied destination. A guessed or enumerated token
+lets an attacker redeem someone else's funds, so token generation must be
+resistant to guessing and enumeration.
+
+### How tokens are generated
+
+Tokens are short-lived HWAC-signed JWTs produced by `JwtKeyRotationProvider`
+(`src/common/crypto/jwt-key-rotation.provider.ts`) with `HS256`. The signature
+cannot be forged without the signing secret.
+
+### Entropy sources
+
+1. **HMAC signature (HS256).** Without the signing secret (`JWT_SECRET`), an
+   attacker cannot forge a token that verifies. This alone blocks guessing of
+   _content_, but a deterministic JWT (same payload + same second) is still
+   identical, and tokens are only accepted if their SHA-256 hash matches a
+   stored `claimTokenHash`. The practical risk is an attacker reusing/guessing
+   an issued token value.
+
+2. **Unique random `jti` claim (added for this issue).** Every issued token now
+   embeds `jti = crypto.randomBytes(32).toString('hex')`. `crypto.randomBytes`
+   is a **cryptographically secure pseudo-random number generator (CSPRNG)** —
+   it is explicitly NOT `Math.random()`, which is deterministic-seeded and not
+   suitable for secrets.
+
+### Why this resists brute-force / enumeration
+
+- The `jti` adds **256 bits of entropy** (32 bytes) unique per token. Even if
+  two tokens are signed for the same `publicKey` within the same second, their
+  values differ.
+- To enumerate a valid token, an attacker must guess the 256-bit `jti` AND
+  produce a valid HMAC signature for it, requiring the signing secret.
+- Brute-forcing 2^256 values is computationally infeasible. For practical
+  comparison, a 128-bit random value has ~2^128 possible values; a collision
+  becomes likely only after ~2^64 (~1.8×10^19) samples.
+
+### Implementation
+
+- `src/modules/accounts/accounts.service.ts` — `generateClaimToken()` now adds
+  the random `jti` claim.
+- No change to token _length_ was required (JWT length is not the entropy
+  carrier; the signed random claim is).
+- Defense-in-depth: token entropy is _not_ a substitute for the rate limiting
+  and failed-attempt scrutiny applied to the redemption endpoint (see the
+  claims rate-limiting issue). Both layers are enforced.
+
+### Conclusion
+
+Token generation uses a cryptographically secure random source with 256 bits
+of entropy per token. No use of `Math.random` or equivalent insecure sources
+was found in the claim-token path.
+
+---
+
+## Issue #468 — Per-Integrator Account Authorization
+
+### Summary
+
+Prior to this change, `GET /accounts/:id` and the account list resolved an
+account by id without any ownership check, so any valid API key could read any
+account's details across tenants.
+
+### Fix
+
+- Accounts are now stamped with the owning `integratorId` at creation (from the
+  authenticated `X-API-Key` - see `ApiKeyAuthGuard`).
+- `GET /accounts/:id` scopes the lookup to the caller's `integratorId`. When
+  the caller is not the owner the service returns `404 NotFoundException`
+  rather than `403`, so an unauthorized caller cannot distinguish an existing
+  account from a missing one (no existence leakage).
+- Migration `1718100008500-AddIntegratorIdToAccountsTable` adds the `uuid`
+  column, an index, and a foreign key to `integrators`.
+
+### Coverage
+
+Unit tests in `accounts.service.spec.ts` assert that cross-integrator access
+returns `NotFoundException` and that `create()` stamps the `integratorId`.

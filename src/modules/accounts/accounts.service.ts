@@ -43,6 +43,7 @@ export class AccountsService {
 
   public async create(
     createAccountDto: CreateAccountDto,
+    integratorId?: string,
   ): Promise<AccountResponseDto> {
     this.accountCreationCounter.inc();
     const startMs = Date.now();
@@ -71,6 +72,7 @@ export class AccountsService {
     // Save with INITIALIZING status first so we have a DB record for cleanup
     // if the Stellar/contract steps fail
     const account = this.accountsRepository.create({
+      integratorId: integratorId ?? null,
       publicKey: ephemeralKeypair.publicKey(),
       secretKeyEncrypted: SecretEncryptionUtil.encrypt(
         ephemeralKeypair.secret(),
@@ -151,6 +153,29 @@ export class AccountsService {
     }
   }
 
+  public async findOne(
+    id: string,
+    integratorId?: string,
+  ): Promise<AccountResponseDto> {
+    const query = this.accountsRepository
+      .createQueryBuilder('account')
+      .where('account.id = :id', { id });
+
+    if (integratorId) {
+      query.andWhere('account.integratorId = :integratorId', { integratorId });
+    }
+
+    const account = await query.getOne();
+
+    if (!account) {
+      // Return 404 (not 403) so an unauthorized caller cannot distinguish an
+      // existing but unowned account from a nonexistent one.
+      throw new NotFoundException(`Account ${id} not found`);
+    }
+
+    return this.mapToResponseDto(account);
+  }
+
   /**
    * Rejects a funding request below the Stellar base reserve before any
    * on-chain call is made for native (XLM) funding. The minimum is sourced
@@ -179,28 +204,24 @@ export class AccountsService {
     }
   }
 
-  public async findOne(id: string): Promise<AccountResponseDto> {
-    const account = await this.accountsRepository.findOne({ where: { id } });
-
-    if (!account) {
-      throw new NotFoundException(`Account ${id} not found`);
-    }
-
-    return this.mapToResponseDto(account);
-  }
-
   public async findAll({
     status,
     limit,
     offset,
+    integratorId,
   }: {
     status?: AccountStatus;
     limit: number;
     offset: number;
+    integratorId?: string;
   }): Promise<{ accounts: AccountResponseDto[]; total: number }> {
     const query = this.accountsRepository
       .createQueryBuilder('account')
       .where('account.deletedAt IS NULL');
+
+    if (integratorId) {
+      query.andWhere('account.integratorId = :integratorId', { integratorId });
+    }
 
     if (status) {
       query.andWhere('account.status = :status', { status });
@@ -235,7 +256,15 @@ export class AccountsService {
       this.configService.get<number>('app.claimTokenExpiry') ?? 2592000;
 
     return this.jwtKeyRotation.sign(
-      { publicKey, type: 'claim' },
+      {
+        publicKey,
+        type: 'claim',
+        // Random unique token id. Guarantees every generated token is unique
+        // even when issued for the same public key within the same second, and
+        // hardens the token against guess/enumeration beyond the HMAC signature
+        // alone. 32 random bytes ⇒ 256 bits of entropy (see SECURITY_AUDIT.md).
+        jti: crypto.randomBytes(32).toString('hex'),
+      },
       { expiresIn: `${expiry}s` },
     );
   }

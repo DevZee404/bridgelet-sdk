@@ -29,6 +29,10 @@ export class Account {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  @Index('IDX_accounts_integratorId')
+  integratorId: string | null;
+
   @Column({ type: 'varchar', length: 56, unique: true })
   @Index('IDX_accounts_publicKey')
   publicKey: string;

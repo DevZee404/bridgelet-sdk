@@ -56,21 +56,29 @@ describe('AccountsController', () => {
       const response = makeResponse();
       mockAccountsService.create.mockResolvedValue(response);
 
-      const result = await controller.create(dto);
+      const req = { integratorId: 'integrator-1' } as any;
+      const result = await controller.create(dto, req);
 
-      expect(mockAccountsService.create).toHaveBeenCalledWith(dto);
+      expect(mockAccountsService.create).toHaveBeenCalledWith(
+        dto,
+        'integrator-1',
+      );
       expect(result).toBe(response);
     });
   });
 
   describe('findOne', () => {
-    it('delegates to accountsService.findOne with the given id', async () => {
+    it('delegates to accountsService.findOne with the id and owning integrator', async () => {
       const response = makeResponse();
       mockAccountsService.findOne.mockResolvedValue(response);
 
-      const result = await controller.findOne('uuid-1');
+      const req = { integratorId: 'integrator-1' } as any;
+      const result = await controller.findOne('uuid-1', req);
 
-      expect(mockAccountsService.findOne).toHaveBeenCalledWith('uuid-1');
+      expect(mockAccountsService.findOne).toHaveBeenCalledWith(
+        'uuid-1',
+        'integrator-1',
+      );
       expect(result).toBe(response);
     });
   });
