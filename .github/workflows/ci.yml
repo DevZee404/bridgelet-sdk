@@ -34,15 +34,36 @@ jobs:
         run: npm run lint
 
       - name: Unit Tests with Coverage
+        # Runs jest --coverage which enforces the thresholds in package.json:
+        # branches: 70%, functions: 78%, lines: 81%, statements: 81%.
+        # Jest exits non-zero if any threshold is breached, failing this step.
         run: npm run test:cov
+
+      - name: Coverage threshold summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            echo "=== Coverage Summary ==="
+            python3 -c "
+import json, sys
+with open('coverage/coverage-summary.json') as f:
+    d = json.load(f)['total']
+for k in ['lines', 'statements', 'functions', 'branches']:
+    pct = d[k]['pct']
+    print(f'{k}: {pct}%')
+"
+          else
+            echo "Coverage summary not available."
+          fi
 
       - name: Build Verification
         run: npm run build
 
-      - name: 'Audit TEMPORARY: comments have a linked issue (issue #458)'
-        # Every TEMPORARY comment must reference a GitHub issue so temporary
-        # workarounds never silently become permanent. Any future TEMPORARY
-        # comment without "(issue #NNN)" fails the build.
+      - name: 'Audit TEMPORARY: comments have a linked issue (issue #458, ongoing guard per #531)'
+        # Every TEMPORARY: comment must reference a GitHub issue using the format
+        # 'TEMPORARY: <reason> (issue #NNN)'. This check runs on every PR so new
+        # TEMPORARY: workarounds cannot be merged without accountability (issue #531).
+        # Existing comments that already include an issue reference are unaffected.
         run: |
           set -euo pipefail
           matches=$(rg -n "TEMPORARY:" --glob '!node_modules' --glob '!dist' \
@@ -81,5 +102,26 @@ jobs:
             echo "::error::src/database/migrations does not match the output of scripts/generate-migrations.sh --yes."
             echo "Regenerate with: ./scripts/generate-migrations.sh --yes"
             cat /tmp/migration-drift.txt
+            exit 1
+          fi
+
+  stellar-sdk-pin:
+    name: Check Stellar SDK Version Pin
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify @stellar/stellar-sdk is exact-pinned (issue #532)
+        run: |
+          set -euo pipefail
+          VERSION=$(node -e "const p = require('./package.json'); console.log(p.dependencies['@stellar/stellar-sdk'] || p.devDependencies['@stellar/stellar-sdk'] || '');")
+          echo "Found @stellar/stellar-sdk version spec: '$VERSION'"
+          if [[ -z "$VERSION" ]]; then
+            echo "::error::@stellar/stellar-sdk not found in package.json"
+            exit 1
+          fi
+          if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "@stellar/stellar-sdk is correctly exact-pinned to $VERSION"
+          else
+            echo "::error::@stellar/stellar-sdk must be exact-pinned (no ^ or ~). Found: '$VERSION'. See README for the manual upgrade process."
             exit 1
           fi
