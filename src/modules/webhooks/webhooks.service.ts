@@ -213,7 +213,8 @@ export class WebhooksService {
 
     if (webhooks.length === 0) return;
 
-    await Promise.allSettled(
+    // Fire and forget - run deliveries in background to avoid blocking caller
+    Promise.allSettled(
       webhooks.map((webhook) =>
         this.deliveryProvider.deliver(
           webhook,
@@ -223,7 +224,10 @@ export class WebhooksService {
           this.requestTimeoutMs,
         ),
       ),
-    );
+    ).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Unexpected error in background webhook delivery: ${msg}`);
+    });
   }
 
   private toResponseDto(webhook: Webhook): WebhookResponseDto {
