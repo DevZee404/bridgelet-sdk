@@ -19,6 +19,7 @@ describe('app.config', () => {
     delete process.env.JWT_SECRET;
     delete process.env.CLAIM_TOKEN_EXPIRY;
     delete process.env.LOG_LEVEL;
+    delete process.env.ENABLE_SWAGGER;
   });
 
   afterEach(() => {
@@ -26,6 +27,7 @@ describe('app.config', () => {
     delete process.env.NODE_ENV;
     delete process.env.JWT_SECRET;
     delete process.env.CLAIM_TOKEN_EXPIRY;
+    delete process.env.ENABLE_SWAGGER;
   });
 
   it('returns defaults when env vars are not set', async () => {
@@ -61,6 +63,19 @@ describe('app.config', () => {
     const mod = await import('./app.config.js');
     const config = (mod.default as unknown as ConfigFactory)();
     expect(config.claimTokenExpiry).toBe(86400);
+  });
+
+  it('defaults enableSwagger to false when ENABLE_SWAGGER is not set', async () => {
+    const mod = await import('./app.config.js');
+    const config = (mod.default as unknown as ConfigFactory)();
+    expect(config.enableSwagger).toBe(false);
+  });
+
+  it('sets enableSwagger to true when ENABLE_SWAGGER=true', async () => {
+    process.env.ENABLE_SWAGGER = 'true';
+    const mod = await import('./app.config.js');
+    const config = (mod.default as unknown as ConfigFactory)();
+    expect(config.enableSwagger).toBe(true);
   });
 });
 

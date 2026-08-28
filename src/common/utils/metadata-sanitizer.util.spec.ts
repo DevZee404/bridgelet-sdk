@@ -73,4 +73,22 @@ describe('sanitizeMetadata', () => {
     const result = sanitizeMetadata({ email: 'a@b.com', phone: '123' });
     expect(result).toEqual({});
   });
+
+  it('rejects an array value (not a JSON object)', () => {
+    expect(() => sanitizeMetadata(['a', 'b'] as never)).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a Date value (not a plain object)', () => {
+    expect(() => sanitizeMetadata(new Date() as never)).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('rejects a primitive string value', () => {
+    expect(() => sanitizeMetadata('not-an-object' as never)).toThrow(
+      BadRequestException,
+    );
+  });
 });

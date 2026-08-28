@@ -8,23 +8,23 @@ Thank you for contributing to the Bridgelet SDK! Please follow these guidelines 
 
 All pull requests are validated automatically for branch naming and PR title format.
 
-- During the initial rollout, checks run in warning mode until **2026-02-27**.
-- After that date, pull requests are blocked until naming issues are fixed...
+- During the initial rollout, checks ran in **warning mode** until **2026-02-27**.
+- Since then, enforcement is active: pull requests are **blocked** until naming issues are fixed (verified 2026-08-27; the `pr-validation.yml` workflow below still blocks on non-conforming names/titles).
 
 ### Branch Name Format
 
 Accepted pattern:
 
-`(fix|feature|test|chore|docs)/issue-brief-description`
+`(<conventional-type>)/brief-description`
 
 Regex used by CI:
 
-`^(fix|feature|test|chore|docs)/issue-[a-z0-9-]+$`
+`^(fix|feature|feat|test|chore|docs|refactor|ref|hotfix|release|ci|build|revert)/[a-z0-9-]+$`
 
 Examples:
 
-- `fix/issue-jwt-error-handling`
-- `feature/issue-webhook-service`
+- `fix/jwt-error-handling`
+- `feature/webhook-service`
 
 `main` and `develop` are exempt for release/hotfix workflows.
 
@@ -32,24 +32,25 @@ Examples:
 
 Accepted pattern:
 
-`(Fix|Feature|Test|Chore|Docs): Brief description (#NUMBER)`
+`<conventional-type>: Brief description`
 
 Regex used by CI:
 
-`^(Fix|Feature|Test|Chore|Docs): .+ \(#[0-9]+\)$`
+`^(fix|feature|feat|test|chore|docs|refactor|ref|hotfix|release|ci|build|revert): .+$`
 
 Examples:
 
-- `Fix: Handle JWT errors in TokenVerificationProvider (#42)`
-- `Test: Add unit tests for ClaimLookupProvider (#43)`
+- `fix: Handle JWT errors in TokenVerificationProvider`
+- `test: Add unit tests for ClaimLookupProvider`
+- `feature: Implement WebhooksService`
 
 ### How To Fix A Branch Name
 
 Rename your local branch and push the new branch:
 
 ```bash
-git branch -m fix/issue-jwt-error-handling
-git push origin -u fix/issue-jwt-error-handling
+git branch -m fix/jwt-error-handling
+git push origin -u fix/jwt-error-handling
 ```
 
 Then update the PR to use the renamed branch. If needed, close the old PR and open a new one from the renamed branch.
@@ -69,9 +70,9 @@ Edit the PR title directly in GitHub:
 2. **Create a feature branch** from `main`:
 
 ```bash
-   git checkout -b fix/issue-description
+   git checkout -b fix/jwt-error-handling
    # or
-   git checkout -b feature/issue-description
+   git checkout -b feature/webhook-service
 ```
 
 3. **Never push directly to `main`** - always work in a branch
@@ -142,18 +143,19 @@ git commit -m "wip"
 
 ### PR Title Format
 
-Use conventional commit format:
+Use conventional commit format matching the CI title regex
+`^(fix|feature|feat|test|chore|docs|refactor|ref|hotfix|release|ci|build|revert): .+$`:
 
 ```
-Fix: Brief description of what was fixed (#issue-number)
-Test: Brief description of tests added (#issue-number)
-Feature: Brief description of feature (#issue-number)
+fix: Brief description of what was fixed
+test: Brief description of tests added
+feature: Brief description of feature
 ```
 
 **Examples:**
 
-- `Fix: Resolve JWT error handling in claims service (#42)`
-- `Test: Add comprehensive unit tests for ClaimRedemptionProvider (#43)`
+- `fix: Resolve JWT error handling in claims service`
+- `test: Add comprehensive unit tests for ClaimRedemptionProvider`
 
 ### PR Description
 
@@ -222,6 +224,8 @@ When you open a PR, our CI will automatically run:
 3. **Add the new file's contents into `scripts/generate-migrations.sh`** as its own `cat > "$MIGRATIONS_DIR/<file>.ts" <<'MIGRATION_EOF' ... MIGRATION_EOF` block, in timestamp order, so the script stays the single source of truth for the folder.
 4. Run `./scripts/generate-migrations.sh --yes` and confirm `git diff` is empty — that's your proof the script and the folder agree.
 5. Update the migration list in [`README.md`](./README.md#installation) to include the new file.
+
+> **CI enforcement:** a `migration-drift` job in [`.github/workflows/ci.yml`](./.github/workflows/ci.yml) runs `./scripts/generate-migrations.sh --yes` against a fresh checkout and fails the build if `src/database/migrations/` does not match the script's output. New migrations must be added to the script — never hand-created in the folder — or this check will fail.
 
 ### Notes on timestamps
 

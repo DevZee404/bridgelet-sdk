@@ -26,16 +26,22 @@ const PII_KEYS = new Set([
 ]);
 
 /**
- * Validates that metadata does not exceed METADATA_MAX_BYTES when serialised,
- * then strips any top-level keys that look like PII.
+ * Validates that metadata is a plain JSON object, does not exceed
+ * METADATA_MAX_BYTES when serialised, then strips any top-level keys that look
+ * like PII.
  *
- * @throws BadRequestException when the serialised metadata exceeds the limit.
+ * @throws BadRequestException when metadata is not a plain object or exceeds
+ *   the serialised size limit (issue #462).
  * @returns A sanitised copy with PII keys removed (or undefined if input is falsy).
  */
 export function sanitizeMetadata(
   metadata: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> | undefined {
   if (!metadata) return undefined;
+
+  if (!isPlainObject(metadata)) {
+    throw new BadRequestException('metadata must be a JSON object');
+  }
 
   const serialised = JSON.stringify(metadata);
   if (Buffer.byteLength(serialised, 'utf8') > METADATA_MAX_BYTES) {
@@ -51,4 +57,12 @@ export function sanitizeMetadata(
     }
   }
   return sanitised;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null) return false;
+  return (
+    Object.getPrototypeOf(value) === Object.prototype ||
+    Object.getPrototypeOf(value) === null
+  );
 }

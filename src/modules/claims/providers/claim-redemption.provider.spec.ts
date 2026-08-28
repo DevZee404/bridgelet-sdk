@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken, getDataSourceToken } from '@nestjs/typeorm';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ClaimRedemptionProvider } from './claim-redemption.provider.js';
 import { TokenVerificationProvider } from './token-verification.provider.js';
 import { Claim } from '../entities/claim.entity.js';
@@ -38,6 +42,10 @@ describe('ClaimRedemptionProvider', () => {
 
   const mockWebhooksService = {
     triggerEvent: jest.fn(),
+  };
+
+  const mockClaimAuditProvider = {
+    record: jest.fn().mockResolvedValue(undefined),
   };
 
   const VALID_DESTINATION =
@@ -147,7 +155,7 @@ describe('ClaimRedemptionProvider', () => {
         { provide: WebhooksService, useValue: mockWebhooksService },
         {
           provide: ClaimAuditProvider,
-          useValue: { record: jest.fn().mockResolvedValue(undefined) },
+          useValue: mockClaimAuditProvider,
         },
         {
           provide: KmsKeyProvider,
@@ -289,6 +297,26 @@ describe('ClaimRedemptionProvider', () => {
       });
     });
 
+    it('should throw a distinct error for a token that never existed (vs already-claimed)', async () => {
+      // A token that never existed has no matching account row: the lock query
+      // returns null and redeemClaim rejects with a generic 400 that does not
+      // reveal whether the account exists (no enumeration), distinct from the
+      // idempotent success returned for an already-claimed token above.
+      const ds = {
+        transaction: jest
+          .fn()
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) =>
+              cb(makeManager(null)),
+          ),
+      };
+      const p = await buildModule(ds);
+
+      await expect(
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow('Invalid or expired claim token');
+    });
+
     it('should handle ConflictException from token verification and return existing claim data', async () => {
       const ds = makeHappyPathDataSource();
       const p = await buildModule(ds);
@@ -327,6 +355,58 @@ describe('ClaimRedemptionProvider', () => {
       await expect(
         p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('does not double-sweep when two redemptions target the same token concurrently (issue #471)', async () => {
+      // Request A acquires the lock on a PENDING_CLAIM account, sweeps, and
+      // finalises to CLAIMED. Request B races the same token: it sees the
+      // account already CLAIMED under the same pessimistic lock and returns
+      // the idempotent "already redeemed" response WITHOUT sweeping again.
+      //
+      // To keep the mock deterministic we model the serialised view of a
+      // pessimistic-lock server: A.lock → B.lock(CLAIMED) → A.finalise.
+      const lockMgr = makeManager({ ...mockAccount });
+      lockMgr.save.mockResolvedValue({
+        ...mockAccount,
+        status: AccountStatus.CLAIMING,
+      });
+      const finaliseMgr = makeManager(null);
+      finaliseMgr.save
+        .mockResolvedValueOnce(undefined) // save(account → CLAIMED)
+        .mockResolvedValueOnce({ ...mockClaim }); // save(newClaim)
+      finaliseMgr.create.mockReturnValue({ ...mockClaim });
+      const claimedAccount = {
+        ...mockAccount,
+        status: AccountStatus.CLAIMED,
+      };
+      const ds = {
+        transaction: jest
+          .fn()
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) => cb(lockMgr),
+          )
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) =>
+              cb(makeManager(claimedAccount)),
+          )
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) => cb(finaliseMgr),
+          ),
+      };
+      const p = await buildModule(ds);
+      mockClaimsRepository.findOne.mockResolvedValue({ ...mockClaim });
+
+      const results = await Promise.allSettled([
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ]);
+
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1].status).toBe('fulfilled');
+
+      // Only ONE Horizon sweep may be initiated for a single token, regardless
+      // of how many duplicate redemption requests arrive concurrently.
+      expect(mockSweepsService.executeSweep).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -443,6 +523,32 @@ describe('ClaimRedemptionProvider', () => {
       await expect(
         provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('redeemClaim - expired token audit logging (issue #470)', () => {
+    it('re-validates expiry at redeem-time and logs an expired-token attempt to the claim audit log', async () => {
+      // An expired token is rejected by token verification (independent of
+      // issuance time). The account is still resolvable by token hash so the
+      // rejection must be captured in the claim audit log (migration
+      // 1718100008000).
+      mockTokenVerificationProvider.verifyClaimToken.mockRejectedValue(
+        new UnauthorizedException('Token has expired'),
+      );
+      mockAccountsRepository.findOne.mockResolvedValue({ ...mockAccount });
+
+      await expect(
+        provider.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(mockClaimAuditProvider.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: mockAccount.id,
+          destination: VALID_DESTINATION,
+          outcome: 'failure',
+          failureReason: 'Token has expired',
+        }),
+      );
     });
   });
 

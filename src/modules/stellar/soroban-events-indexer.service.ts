@@ -34,12 +34,13 @@ export interface RawSorobanEvent {
 }
 
 @Injectable()
-export class SorobanEventsIndexerService implements OnModuleInit, OnModuleDestroy {
+export class SorobanEventsIndexerService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(SorobanEventsIndexerService.name);
   private readonly sorobanServer: SorobanRpc.Server;
   private readonly horizonUrl: string;
   private pollHandle: ReturnType<typeof setInterval> | null = null;
-  private pollInProgress = false;
 
   constructor(
     @InjectRepository(ContractEvent)
@@ -56,10 +57,15 @@ export class SorobanEventsIndexerService implements OnModuleInit, OnModuleDestro
 
   onModuleInit(): void {
     const intervalMs = parseInt(
-      process.env.CONTRACT_EVENT_POLL_INTERVAL_MS ?? '30000',
+      this.configService.get<string>('stellar.contractEventPollIntervalMs') ??
+        '30000',
       10,
     );
-    this.pollHandle = setInterval(() => void this.runPoll(), intervalMs);
+
+    this.pollHandle = setInterval(
+      () => void this.pollLatestEvents(),
+      intervalMs,
+    );
     this.logger.log(
       `Contract event polling started (interval: ${intervalMs}ms)`,
     );
@@ -73,17 +79,18 @@ export class SorobanEventsIndexerService implements OnModuleInit, OnModuleDestro
     this.logger.log('Contract event polling stopped');
   }
 
-  private async runPoll(): Promise<void> {
-    if (this.pollInProgress) return;
-
-    this.pollInProgress = true;
+  async pollLatestEvents(): Promise<void> {
     try {
-      await this.pollEvents();
+      const latestEvent = await this.contractEventRepository.findOne({
+        order: { ledgerSequence: 'DESC' },
+      });
+      const startLedger = latestEvent
+        ? Number(latestEvent.ledgerSequence) + 1
+        : undefined;
+      await this.pollEvents(startLedger);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`Contract event poll failed: ${message}`);
-    } finally {
-      this.pollInProgress = false;
     }
   }
 
@@ -147,13 +154,20 @@ export class SorobanEventsIndexerService implements OnModuleInit, OnModuleDestro
           `Indexed contract event ${saved.eventType} for ${saved.contractAddress} (ledger ${saved.ledgerSequence})`,
         );
       } catch (err: unknown) {
-        if ((err as { driverError?: { code?: string } }).driverError?.code !== '23505') {
-          throw err;
-        }
+        if (!this.isUniqueViolation(err)) throw err;
       }
     }
 
     return savedEvents;
+  }
+
+  private isUniqueViolation(err: unknown): boolean {
+    return (
+      typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      (err as { code?: string }).code === '23505'
+    );
   }
 
   /**

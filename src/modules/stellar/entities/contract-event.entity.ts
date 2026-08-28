@@ -7,9 +7,13 @@ import {
 } from 'typeorm';
 
 @Entity('contract_events')
-@Index('UQ_contract_events_identity', ['eventType', 'contractAddress', 'txHash'], {
-  unique: true,
-})
+@Index(
+  'UQ_contract_events_identity',
+  ['eventType', 'contractAddress', 'txHash'],
+  {
+    unique: true,
+  },
+)
 export class ContractEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;

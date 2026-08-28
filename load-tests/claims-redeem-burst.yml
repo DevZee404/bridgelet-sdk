@@ -1,0 +1,21 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 1
+      arrivalCount: 50
+  payload:
+    path: './claim-tokens.csv'
+    fields:
+      - claimToken
+      - destinationAddress
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+scenarios:
+  - name: Redeem 50 claims in a single burst (sweep path)
+    flow:
+      - post:
+          url: '/claims/redeem'
+          json:
+            claimToken: '{{ claimToken }}'
+            destinationAddress: '{{ destinationAddress }}'

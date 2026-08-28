@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account } from './entities/account.entity.js';
@@ -8,6 +13,7 @@ import { StellarService } from '../stellar/stellar.service.js';
 import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { AccountStatus } from './enums/account-status.enum.js';
+import { assertValidAccountStatusTransition } from './enums/account-status-transitions.js';
 import { SecretEncryptionUtil } from '../../common/crypto/secret-encryption.util.js';
 import { KmsKeyProvider } from '../../common/crypto/kms-key.provider.js';
 import { JwtKeyRotationProvider } from '../../common/crypto/jwt-key-rotation.provider.js';
@@ -37,9 +43,11 @@ export class AccountsService {
 
   public async create(
     createAccountDto: CreateAccountDto,
+    integratorId?: string,
   ): Promise<AccountResponseDto> {
     this.accountCreationCounter.inc();
     const startMs = Date.now();
+    this.assertFundingAmountMeetsReserve(createAccountDto);
     // Generate ephemeral keypair
     const ephemeralKeypair = this.stellarService.generateKeypair();
 
@@ -64,6 +72,7 @@ export class AccountsService {
     // Save with INITIALIZING status first so we have a DB record for cleanup
     // if the Stellar/contract steps fail
     const account = this.accountsRepository.create({
+      integratorId: integratorId ?? null,
       publicKey: ephemeralKeypair.publicKey(),
       secretKeyEncrypted: SecretEncryptionUtil.encrypt(
         ephemeralKeypair.secret(),
@@ -96,6 +105,10 @@ export class AccountsService {
       });
 
       // Both Horizon and contract succeeded — advance to real status
+      assertValidAccountStatusTransition(
+        account.status,
+        AccountStatus.PENDING_PAYMENT,
+      );
       account.status = AccountStatus.PENDING_PAYMENT;
       account.contractId = this.configService.getOrThrow<string>(
         'stellar.contracts.ephemeralAccount',
@@ -126,6 +139,7 @@ export class AccountsService {
       this.latencyMetrics.record(Date.now() - startMs, false);
 
       // Mark as FAILED so the record is traceable but clearly broken
+      assertValidAccountStatusTransition(account.status, AccountStatus.FAILED);
       account.status = AccountStatus.FAILED;
       await this.accountsRepository.save(account);
 
@@ -139,8 +153,42 @@ export class AccountsService {
     }
   }
 
-  public async findOne(id: string): Promise<AccountResponseDto> {
-    const account = await this.accountsRepository.findOne({ where: { id } });
+  public async findOne(
+    id: string,
+    integratorId?: string,
+  ): Promise<AccountResponseDto> {
+    const query = this.accountsRepository
+      .createQueryBuilder('account')
+      .where('account.id = :id', { id });
+
+    if (integratorId) {
+      query.andWhere('account.integratorId = :integratorId', { integratorId });
+    }
+
+    const account = await query.getOne();
+
+    if (!account) {
+      // Return 404 (not 403) so an unauthorized caller cannot distinguish an
+      // existing but unowned account from a nonexistent one.
+      throw new NotFoundException(`Account ${id} not found`);
+    }
+
+    return this.mapToResponseDto(account);
+  }
+
+  /**
+   * Admin/audit lookup that includes soft-deleted accounts (issue #461).
+   *
+   * The default {@link findOne} path excludes soft-deleted rows (TypeORM adds
+   * `deletedAt IS NULL` automatically because `deletedAt` is a
+   * `@DeleteDateColumn`). This method explicitly opts back in so auditing and
+   * compliance tooling can inspect historical/removed accounts.
+   */
+  public async findOneWithDeleted(id: string): Promise<AccountResponseDto> {
+    const account = await this.accountsRepository.findOne({
+      where: { id },
+      withDeleted: true,
+    });
 
     if (!account) {
       throw new NotFoundException(`Account ${id} not found`);
@@ -149,18 +197,52 @@ export class AccountsService {
     return this.mapToResponseDto(account);
   }
 
+  /**
+   * Rejects a funding request below the Stellar base reserve before any
+   * on-chain call is made for native (XLM) funding. The minimum is sourced
+   * from the `stellar.minimumReserveXlm` network config value.
+   */
+  private assertFundingAmountMeetsReserve(createAccountDto: CreateAccountDto) {
+    const asset = createAccountDto.asset_code;
+    if (asset && asset !== 'native') {
+      return;
+    }
+
+    const amount = Number(createAccountDto.amount);
+    if (Number.isNaN(amount)) {
+      return;
+    }
+
+    const minReserve = this.configService.get<number>(
+      'stellar.minimumReserveXlm',
+      0.5,
+    );
+
+    if (amount < minReserve) {
+      throw new BadRequestException(
+        `Funding amount must be at least the Stellar minimum reserve of ${minReserve} XLM`,
+      );
+    }
+  }
+
   public async findAll({
     status,
     limit,
     offset,
+    integratorId,
   }: {
     status?: AccountStatus;
     limit: number;
     offset: number;
+    integratorId?: string;
   }): Promise<{ accounts: AccountResponseDto[]; total: number }> {
     const query = this.accountsRepository
       .createQueryBuilder('account')
       .where('account.deletedAt IS NULL');
+
+    if (integratorId) {
+      query.andWhere('account.integratorId = :integratorId', { integratorId });
+    }
 
     if (status) {
       query.andWhere('account.status = :status', { status });
@@ -195,7 +277,15 @@ export class AccountsService {
       this.configService.get<number>('app.claimTokenExpiry') ?? 2592000;
 
     return this.jwtKeyRotation.sign(
-      { publicKey, type: 'claim' },
+      {
+        publicKey,
+        type: 'claim',
+        // Random unique token id. Guarantees every generated token is unique
+        // even when issued for the same public key within the same second, and
+        // hardens the token against guess/enumeration beyond the HMAC signature
+        // alone. 32 random bytes ⇒ 256 bits of entropy (see SECURITY_AUDIT.md).
+        jti: crypto.randomBytes(32).toString('hex'),
+      },
       { expiresIn: `${expiry}s` },
     );
   }
