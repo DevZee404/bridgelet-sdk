@@ -289,6 +289,26 @@ describe('ClaimRedemptionProvider', () => {
       });
     });
 
+    it('should throw a distinct error for a token that never existed (vs already-claimed)', async () => {
+      // A token that never existed has no matching account row: the lock query
+      // returns null and redeemClaim rejects with a generic 400 that does not
+      // reveal whether the account exists (no enumeration), distinct from the
+      // idempotent success returned for an already-claimed token above.
+      const ds = {
+        transaction: jest
+          .fn()
+          .mockImplementationOnce(
+            async (cb: (m: unknown) => Promise<unknown>) =>
+              cb(makeManager(null)),
+          ),
+      };
+      const p = await buildModule(ds);
+
+      await expect(
+        p.redeemClaim(VALID_TOKEN, VALID_DESTINATION),
+      ).rejects.toThrow('Invalid or expired claim token');
+    });
+
     it('should handle ConflictException from token verification and return existing claim data', async () => {
       const ds = makeHappyPathDataSource();
       const p = await buildModule(ds);

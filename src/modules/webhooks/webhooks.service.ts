@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import {
   FindManyOptions,
   LessThan,
@@ -18,6 +19,8 @@ import { WebhookDeliveryProvider } from './providers/webhook-delivery.provider.j
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
+  private readonly maxRetries: number;
+  private readonly requestTimeoutMs: number;
 
   constructor(
     @InjectRepository(Webhook)
@@ -25,7 +28,14 @@ export class WebhooksService {
     @InjectRepository(WebhookDelivery)
     private readonly deliveryRepository: Repository<WebhookDelivery>,
     private readonly deliveryProvider: WebhookDeliveryProvider,
-  ) {}
+    configService: ConfigService,
+  ) {
+    this.maxRetries = configService.get<number>('app.webhookRetryAttempts', 3);
+    this.requestTimeoutMs = configService.get<number>(
+      'app.webhookTimeout',
+      10_000,
+    );
+  }
 
   async create(dto: CreateWebhookDto): Promise<WebhookResponseDto> {
     const webhook = this.webhookRepository.create({
@@ -167,7 +177,13 @@ export class WebhooksService {
       throw new NotFoundException(`Webhook with ID ${id} not found`);
     }
 
-    await this.deliveryProvider.deliver(webhook, 'webhook.test', {});
+    await this.deliveryProvider.deliver(
+      webhook,
+      'webhook.test',
+      {},
+      this.maxRetries,
+      this.requestTimeoutMs,
+    );
   }
 
   /**
@@ -199,7 +215,13 @@ export class WebhooksService {
 
     await Promise.allSettled(
       webhooks.map((webhook) =>
-        this.deliveryProvider.deliver(webhook, eventType, payload),
+        this.deliveryProvider.deliver(
+          webhook,
+          eventType,
+          payload,
+          this.maxRetries,
+          this.requestTimeoutMs,
+        ),
       ),
     );
   }

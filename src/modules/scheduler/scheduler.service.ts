@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { StellarService } from '../stellar/stellar.service.js';
 import { Account } from '../accounts/entities/account.entity.js';
 import { AccountStatus } from '../accounts/enums/account-status.enum.js';
+import { assertValidAccountStatusTransition } from '../accounts/enums/account-status-transitions.js';
 import { WebhooksService } from '../webhooks/webhooks.service.js';
 
 @Injectable()
@@ -119,6 +120,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     }
 
     const expiredAt = new Date();
+    assertValidAccountStatusTransition(account.status, AccountStatus.EXPIRED);
     await this.accountsRepository.update(account.id, {
       status: AccountStatus.EXPIRED,
       expiredAt,
@@ -177,6 +179,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
         failureReason: 'initialization_timeout',
         detectedAt: new Date().toISOString(),
       };
+      assertValidAccountStatusTransition(account.status, AccountStatus.FAILED);
       await this.accountsRepository.update(account.id, {
         status: AccountStatus.FAILED,
         metadata,

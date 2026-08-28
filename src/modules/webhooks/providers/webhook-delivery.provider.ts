@@ -33,6 +33,7 @@ export class WebhookDeliveryProvider {
     eventType: string,
     payload: Record<string, unknown>,
     maxRetries = 3,
+    timeoutMs = 10_000,
   ): Promise<void> {
     const deliveryId = crypto.randomUUID();
     const body = JSON.stringify({
@@ -63,7 +64,7 @@ export class WebhookDeliveryProvider {
     while (attemptCount < maxRetries && !success) {
       attemptCount++;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10_000);
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
         const response = await fetch(webhook.url, {
