@@ -25,19 +25,24 @@ The following services/imports are currently **commented out** to allow `npm run
 ### How to Find Temporary Changes:
 
 1. Search the codebase for comments containing `TEMPORARY:` to locate all commented-out code that needs restoration..
+2. **Every `TEMPORARY:` comment MUST reference a linked GitHub issue** using the
+   format `TEMPORARY: <reason> (issue #NNN)`. This is enforced by CI (see
+   `.github/workflows/ci.yml`), so a temporary workaround can never silently
+   become permanent. Track restoration in the linked issue. There are currently
+   **zero** `TEMPORARY:` comments in the codebase (issue #458).
 
-2. **Secret Encryption** (`src/modules/accounts/accounts.service.ts`)
+3. **Secret Encryption** (`src/modules/accounts/accounts.service.ts`)
    - **Current:** Base64 encoding (NOT encryption)
    - **Impact:** Ephemeral secret keys are not protected at rest
    - **Required:** AES-256-GCM or KMS-backed encryption before any deployment
      with real funds
 
-3. **Ledger Expiry Conversion**
+4. **Ledger Expiry Conversion**
    - `CreateAccountDto.expiresIn` (seconds) is not yet converted to
      `expiry_ledger` (u32 ledger sequence) required by the contract
    - `expiresAt` Date is currently unused in `StellarService`
    - Conversion formula: `current_ledger + (expiresIn / 5)`
-4. **Sweep Authorization Signature** (`src/modules/sweeps/providers/contract.provider.ts`)
+5. **Sweep Authorization Signature** (`src/modules/sweeps/providers/contract.provider.ts`)
    - **Current:** `generateAuthSignature()` produces a fake 64-byte stub signature
    - **Works because:** `EphemeralAccount.verify_sweep_authorization()` in `bridgelet-core`
      is also a stub that accepts any signature (documented in bridgelet-core README)
@@ -283,6 +288,20 @@ GET /webhooks # List webhook subscriptions
 POST /webhooks # Subscribe to events
 PUT /webhooks/:id # Update webhook subscription (e.g. URL, events)
 DELETE /webhooks/:id # Delete webhook subscription
+
+## Metadata (issue #462)
+
+`POST /accounts` accepts an optional `metadata` JSON object for integration
+bookkeeping (e.g. `userId`, `orderId`). Constraints:
+
+- Must be a **plain JSON object** (arrays and primitives are rejected).
+- Must serialise to at most **4 KB** (4096 bytes) — larger payloads are rejected.
+- Any top-level key matching a known PII identifier (`email`, `phone`, `name`,
+  `address`, `ssn`, `dob`, `passport`, `taxid`, etc.) is **stripped before
+  storage**. PII is never persisted.
+
+Validation is applied on write only, so existing metadata is unaffected
+retroactively.
 
 ## Database Schema
 

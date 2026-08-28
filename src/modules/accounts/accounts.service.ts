@@ -177,6 +177,27 @@ export class AccountsService {
   }
 
   /**
+   * Admin/audit lookup that includes soft-deleted accounts (issue #461).
+   *
+   * The default {@link findOne} path excludes soft-deleted rows (TypeORM adds
+   * `deletedAt IS NULL` automatically because `deletedAt` is a
+   * `@DeleteDateColumn`). This method explicitly opts back in so auditing and
+   * compliance tooling can inspect historical/removed accounts.
+   */
+  public async findOneWithDeleted(id: string): Promise<AccountResponseDto> {
+    const account = await this.accountsRepository.findOne({
+      where: { id },
+      withDeleted: true,
+    });
+
+    if (!account) {
+      throw new NotFoundException(`Account ${id} not found`);
+    }
+
+    return this.mapToResponseDto(account);
+  }
+
+  /**
    * Rejects a funding request below the Stellar base reserve before any
    * on-chain call is made for native (XLM) funding. The minimum is sourced
    * from the `stellar.minimumReserveXlm` network config value.

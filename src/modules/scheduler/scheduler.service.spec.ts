@@ -252,6 +252,23 @@ describe('SchedulerService', () => {
       expect(stellarService.expireAccount).not.toHaveBeenCalled();
     });
 
+    it('emits an error-level alert log when stale accounts are found (issue #463)', async () => {
+      const account = makeAccount({
+        id: 'a1',
+        status: AccountStatus.INITIALIZING,
+        createdAt: new Date(Date.now() - 700_000),
+      });
+      accountsRepo.find.mockResolvedValueOnce([account]);
+
+      const errorSpy = jest.spyOn((service as any).logger, 'error');
+      errorSpy.mockImplementation(() => undefined);
+
+      await service.runInitializingCleanup();
+
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('ALERT'));
+      errorSpy.mockRestore();
+    });
+
     it('does nothing when no stale INITIALIZING accounts are found', async () => {
       accountsRepo.find.mockResolvedValueOnce([]);
 
