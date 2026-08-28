@@ -234,10 +234,29 @@ STELLAR_SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
 JWT_SECRET=your-secret-key
 CLAIM_TOKEN_EXPIRY=2592000  # 30 days
 
+# Stellar funding / sweep secrets (high privilege — see Deployment Guide)
+FUNDING_ACCOUNT_SECRET=...
+RECOVERY_ACCOUNT_PUBLIC=G...
+SWEEP_SIGNING_KEY_SEED=...
+ENCRYPTION_KEY=your-64-char-hex-string
+
 # Application
 PORT=3000
 NODE_ENV=development
 ```
+
+> **High-privilege secrets:** `FUNDING_ACCOUNT_SECRET`, `SWEEP_SIGNING_KEY_SEED`,
+> `JWT_SECRET`, and `ENCRYPTION_KEY` control accounts that can move or authorise
+> real funds. In production these must be supplied from a secrets manager
+> (AWS Secrets Manager / SSM, Vault, KMS-backed injection, etc.) — **not** a
+> plain `.env` value — and must never be committed or logged. See the
+> [Deployment Guide](./docs/deployment.md) for secure storage, rotation, and
+> balance-monitoring guidance for the funding account.
+>
+> `JWT_SECRET` must be a strong, random value of **at least 32 characters**.
+> In non-development environments (`NODE_ENV=production`, `staging`, etc.) the
+> application **refuses to start** if `JWT_SECRET` is empty, shorter than 32
+> characters, or a known placeholder such as `your-secret-key`.
 
 ## API Documentation
 
