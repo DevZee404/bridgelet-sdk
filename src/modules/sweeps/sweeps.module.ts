@@ -22,6 +22,16 @@ const sweepFailureCounter = makeCounterProvider({
   name: 'sweep_failure_total',
   help: 'Total number of failed sweeps',
 });
+const sweepDeadletterCounter = makeCounterProvider({
+  name: 'sweep_deadletter_total',
+  help: 'Total number of sweeps moved to the dead-letter queue after exhausting all retries',
+  labelNames: ['account_id'],
+});
+const sweepDeadletterResolvedCounter = makeCounterProvider({
+  name: 'sweep_deadletter_resolved_total',
+  help: 'Total number of dead-lettered sweeps that have been manually resolved by operators',
+  labelNames: ['account_id'],
+});
 
 @Module({
   imports: [
@@ -40,6 +50,8 @@ const sweepFailureCounter = makeCounterProvider({
     SweepMonitorService,
     sweepSuccessCounter,
     sweepFailureCounter,
+    sweepDeadletterCounter,
+    sweepDeadletterResolvedCounter,
   ],
   exports: [SweepsService],
 })
