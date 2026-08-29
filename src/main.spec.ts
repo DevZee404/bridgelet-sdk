@@ -1,5 +1,5 @@
 /**
- * Tests for the network config startup guard introduced in main.ts (Issue #212).
+ * Test for the network config startup guard introduced in main.ts (Issue #212).
  *
  * The guard prevents accidental production deployment with a testnet Stellar
  * config.  We test the core assertion logic directly by reproducing it here
