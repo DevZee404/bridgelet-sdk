@@ -261,24 +261,20 @@ If you notice issues outside your scope, open a separate issue instead.
 
 **Thank you for helping improve Bridgelet SDK!** 🚀
 
-### Test Data Factories
+## Pre-commit Hooks
 
-Shared factory utilities for constructing valid test entities live in `src/testing/factories/`. Use them in unit and integration tests to avoid duplicating setup code:
+Pre-commit hooks are managed via [Husky](https://typicode.github.io/husky/) and [lint-staged](https://github.com/lint-staged/lint-staged).
 
-```typescript
-import { makeAccount, makeClaim, makeWebhook } from '../../testing/factories/index.js';
+After cloning, run:
 
-// Create a test account with defaults
-const account = makeAccount();
-
-// Override specific fields
-const expiredAccount = makeAccount({ status: AccountStatus.EXPIRED });
-
-// Create a claim linked to the account
-const claim = makeClaim({ accountId: account.id });
-
-// Create a webhook subscription
-const webhook = makeWebhook({ url: 'https://example.com/hook' });
+```bash
+npm install
 ```
 
-All factories accept an optional partial override object. Sensible defaults are provided for all required fields. See `src/testing/factories/` for available factories and their default values.
+This triggers the `prepare` script which installs the Husky hooks. The pre-commit hook runs `lint-staged` on staged `.ts`, `.json`, `.md`, `.yml`, and `.yaml` files (lint + format). Only staged files are checked, so the hook is fast.
+
+To skip the hook in an emergency:
+
+```bash
+git commit --no-verify -m "your message"
+```

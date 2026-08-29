@@ -1,0 +1,31 @@
+name: Local Sandbox Integration (Scheduled)
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+jobs:
+  sandbox:
+    name: Local Sandbox Integration Test
+    runs-on: ubuntu-latest
+    if: ${{ vars.SANDBOX_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - name: Run local sandbox integration tests
+        env:
+          STELLAR_HORIZON_URL: ${{ secrets.STELLAR_HORIZON_URL }}
+          STELLAR_SOROBAN_RPC_URL: ${{ secrets.STELLAR_SOROBAN_RPC_URL }}
+          EPHEMERAL_ACCOUNT_CONTRACT_ID: ${{ secrets.EPHEMERAL_ACCOUNT_CONTRACT_ID }}
+          SWEEP_CONTROLLER_CONTRACT_ID: ${{ secrets.SWEEP_CONTROLLER_CONTRACT_ID }}
+          FUNDING_ACCOUNT_SECRET: ${{ secrets.FUNDING_ACCOUNT_SECRET }}
+          RECOVERY_ACCOUNT_PUBLIC: ${{ secrets.RECOVERY_ACCOUNT_PUBLIC }}
+          SWEEP_SIGNING_KEY_SEED: ${{ secrets.SWEEP_SIGNING_KEY_SEED }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          STELLAR_LOCAL_SANDBOX: 'true'
+        run: npm run test:local-sandbox
