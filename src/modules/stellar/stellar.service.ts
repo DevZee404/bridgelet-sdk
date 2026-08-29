@@ -248,29 +248,41 @@ export class StellarService {
   }
 
   /**
-   * Converts a seconds-based expiry duration to a Stellar ledger sequence number.
-   * Adds a small buffer (10 ledgers) to account for submission latency.
+   * Converts a deadline to a Stellar ledger sequence number.
    *
-   * Formula (issue #455): `expiry_ledger = current_ledger + ceil(expiresInSeconds / 5)`
-   * The `/5` divisor assumes Stellar closes a ledger approximately every 5
+   * Source of truth: the account's wall-clock `expiresAt` timestamp is the
+   * authoritative API-level expiry. `expiresIn` is only the request input used
+   * to derive that timestamp at creation time. When `expiresAt` is passed, we
+   * compute the remaining duration from the exact instant the account is being
+   * initialized so the on-chain ledger expiry stays aligned with the same
+   * absolute deadline.
+   *
+   * Formula (issue #455): `expiry_ledger = current_ledger + ceil(remaining_seconds / 5)`
+   * The `/5` divisor follows Stellar's target ledger-close interval of ~5
    * seconds. This is a network-level approximation: if the actual average
-   * ledger-close time drifts materially from 5s (e.g. prolonged congestion or
-   * network outages), the wall-clock expiry implied by the derived ledger will
-   * differ from the real elapsed time. The 10-ledger buffer covers small
-   * deviations; operators monitoring long-lived accounts should account for
-   * drift when estimating actual expiry time from a ledger sequence.
+   * close time drifts materially from 5s (for example during congestion or a
+   * degraded network), the derived ledger will differ from the exact wall-clock
+   * deadline. The `EXPIRY_BUFFER_LEDGERS` buffer (10 ledgers) absorbs small
+   * drift so accounts do not expire prematurely due to normal latency.
    *
-   * This wall-clock `expiresAt` field on the account is intentionally separate
-   * from this on-chain ledger number: `expiresAt` drives the off-chain expiry
-   * scheduler and validation checks (see #456), while the ledger number is
-   * enforced by the Soroban contract on-chain. They are complementary, not
-   * redundant.
+   * The wall-clock `expiresAt` field on the account and the on-chain
+   * `expiry_ledger` are complementary: `expiresAt` drives the off-chain expiry
+   * scheduler and validation checks, while `expiry_ledger` is enforced by the
+   * Soroban contract on-chain.
    */
-  async toExpiryLedger(expiresInSeconds: number): Promise<number> {
+  async toExpiryLedger(
+    expiresInSeconds: number,
+    expiresAt?: Date,
+  ): Promise<number> {
     const currentLedger = await this.getCurrentLedger();
-    return (
-      currentLedger + Math.ceil(expiresInSeconds / 5) + EXPIRY_BUFFER_LEDGERS
+    const remainingSeconds = expiresAt
+      ? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 1000))
+      : expiresInSeconds;
+    const ledgersUntilExpiry = Math.max(
+      1,
+      Math.ceil(remainingSeconds / 5),
     );
+    return currentLedger + ledgersUntilExpiry + EXPIRY_BUFFER_LEDGERS;
   }
 
   generateKeypair(): StellarSdk.Keypair {
@@ -298,6 +310,7 @@ export class StellarService {
     amount: string;
     asset: string;
     expiresIn: number;
+    expiresAt?: Date;
     recoveryAddress: string;
     contractId: string;
     sweepControllerContractId: string;
@@ -334,8 +347,14 @@ export class StellarService {
     const result = await this.server.submitTransaction(transaction);
     this.logger.log(`Horizon account created: ${result.hash}`);
 
-    // Step 2: Initialize the Soroban contract with restrictions
-    const expiryLedger = await this.toExpiryLedger(params.expiresIn);
+    // Step 2: Initialize the Soroban contract with restrictions.
+    // `expiresAt` is the absolute deadline computed from `expiresIn`; using it
+    // here keeps the API-level deadline and the on-chain `expiry_ledger`
+    // aligned as the account is initialized.
+    const expiryLedger = await this.toExpiryLedger(
+      params.expiresIn,
+      params.expiresAt,
+    );
 
     const contract = new StellarSdk.Contract(params.contractId);
     const sourceAccount = await this.sorobanServer.getAccount(

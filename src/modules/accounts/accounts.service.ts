@@ -95,6 +95,7 @@ export class AccountsService {
         amount: createAccountDto.amount,
         asset,
         expiresIn: createAccountDto.expiresIn,
+        expiresAt,
         recoveryAddress: createAccountDto.recovery_address,
         contractId: this.configService.getOrThrow<string>(
           'stellar.contracts.ephemeralAccount',

@@ -11,8 +11,18 @@ Request body:
 - `amount` (string, required): Amount to fund the ephemeral account.
 - `asset_code` (string, optional): Asset code to fund with, or `native` for XLM.
 - `asset_issuer` (string, optional): Asset issuer public key when using a non-native asset.
-- `expiresIn` (number, required): Expiry in seconds (minimum 3600, maximum 2592000).
+- `expiresIn` (number, required): Expiry in seconds (minimum 3600, maximum 2592000). The SDK converts this to an absolute `expiresAt` timestamp using `new Date(Date.now() + expiresIn * 1000)` and then derives the contract `expiry_ledger` from that deadline during account initialization.
 - `metadata` (object, optional): Free-form metadata attached to the account.
+
+### Expiry conversion
+
+The SDK treats the wall-clock `expiresAt` timestamp as the source of truth for account lifetime. At creation time, `expiresIn` is converted to an absolute timestamp, and `StellarService.toExpiryLedger()` converts that remaining lifetime into a ledger sequence number for the `EphemeralAccount.initialize()` call.
+
+The ledger conversion uses the Stellar assumption that a new ledger closes in roughly 5 seconds:
+
+`expiry_ledger = current_ledger + ceil(remaining_seconds / 5) + 10`
+
+The extra `+ 10` is the `EXPIRY_BUFFER_LEDGERS` safety buffer to absorb normal network latency and keep the on-chain expiry from firing earlier than the intended wall-clock deadline.
 
 Headers:
 
