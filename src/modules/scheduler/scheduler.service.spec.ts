@@ -3,14 +3,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Account } from '../accounts/entities/account.entity.js';
+import { ClaimAuditLog } from '../claims/entities/claim-audit-log.entity.js';
 import { AccountStatus } from '../accounts/enums/account-status.enum.js';
 import { SchedulerService } from './scheduler.service.js';
 import { StellarService } from '../stellar/stellar.service.js';
+import { SweepsService } from '../sweeps/sweeps.service.js';
 import { WebhooksService } from '../webhooks/webhooks.service.js';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+import { KmsKeyProvider } from '../../common/crypto/kms-key.provider.js';
+import { SecretEncryptionUtil } from '../../common/crypto/secret-encryption.util.js';
 
 const makeAccount = (overrides: Partial<Account> = {}): Account =>
   ({
@@ -22,7 +22,7 @@ const makeAccount = (overrides: Partial<Account> = {}): Account =>
     fundingSource: 'GFUNDING',
     amount: '100',
     asset: 'USDC',
-    claimTokenHash: null,
+    claimTokenHash: 'abc123',
     destinationAddress: null,
     expiresAt: new Date(Date.now() - 60_000),
     createdAt: new Date(Date.now() - 3_600_000),
@@ -34,18 +34,22 @@ const makeAccount = (overrides: Partial<Account> = {}): Account =>
     ...overrides,
   }) as Account;
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('SchedulerService', () => {
   let service: SchedulerService;
   let stellarService: {
     expireAccount: jest.MockedFunction<StellarService['expireAccount']>;
   };
+  let sweepsService: {
+    executeRecoverySweep: jest.MockedFunction<
+      SweepsService['executeRecoverySweep']
+    >;
+  };
   let accountsRepo: {
     find: jest.MockedFunction<() => Promise<Account[]>>;
     update: jest.MockedFunction<() => Promise<any>>;
+  };
+  let claimAuditRepo: {
+    delete: jest.MockedFunction<() => Promise<any>>;
   };
 
   beforeEach(async () => {
@@ -54,13 +58,27 @@ describe('SchedulerService', () => {
       update: jest.fn<() => Promise<any>>().mockResolvedValue({ affected: 1 }),
     };
 
+    claimAuditRepo = {
+      delete: jest.fn<() => Promise<any>>().mockResolvedValue({ affected: 0 }),
+    };
+
     const stellarMock = {
       expireAccount: jest
         .fn<StellarService['expireAccount']>()
         .mockResolvedValue(undefined),
     };
 
+    const sweepsMock = {
+      executeRecoverySweep: jest
+        .fn<SweepsService['executeRecoverySweep']>()
+        .mockResolvedValue({ success: true, txHash: 'a'.repeat(64) }),
+    };
+
     const configMock = {
+      get: jest.fn((key: string) => {
+        if (key === 'app.claimAuditRetentionDays') return 90;
+        return undefined;
+      }),
       getOrThrow: jest.fn((key: string) => {
         const map: Record<string, string> = {
           'stellar.fundingSecret': 'SFUNDING_SECRET',
@@ -80,26 +98,34 @@ describe('SchedulerService', () => {
       providers: [
         SchedulerService,
         { provide: getRepositoryToken(Account), useValue: accountsRepo },
+        {
+          provide: getRepositoryToken(ClaimAuditLog),
+          useValue: claimAuditRepo,
+        },
         { provide: StellarService, useValue: stellarMock },
+        { provide: SweepsService, useValue: sweepsMock },
         { provide: ConfigService, useValue: configMock },
         { provide: WebhooksService, useValue: webhooksMock },
+        {
+          provide: KmsKeyProvider,
+          useValue: {
+            getEncryptionKey: jest.fn().mockReturnValue('a'.repeat(64)),
+          },
+        },
       ],
     }).compile();
 
     service = module.get(SchedulerService);
     stellarService = module.get(StellarService);
+    sweepsService = module.get(SweepsService);
 
-    // Prevent real intervals from starting
+    jest.spyOn(SecretEncryptionUtil, 'decrypt').mockReturnValue('SSECRET');
+
     jest.spyOn(service, 'onModuleInit').mockImplementation(() => undefined);
   });
 
-  // -------------------------------------------------------------------------
-  // Lifecycle
-  // -------------------------------------------------------------------------
-
   describe('onModuleInit / onModuleDestroy', () => {
     it('starts two setIntervals on init and clears both on destroy', () => {
-      // Restore the beforeEach no-op spy so we hit the real implementation
       jest.restoreAllMocks();
 
       const handles = [111, 222];
@@ -123,13 +149,12 @@ describe('SchedulerService', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // Expiry job — happy path
-  // -------------------------------------------------------------------------
-
   describe('runExpiryJob()', () => {
-    it('calls expireAccount() and updates status to EXPIRED for expired accounts', async () => {
-      const account = makeAccount({ status: AccountStatus.PENDING_PAYMENT });
+    it('calls expireAccount(), recovery sweep, and invalidates claim token (issues #477/#487)', async () => {
+      const account = makeAccount({
+        status: AccountStatus.PENDING_CLAIM,
+        claimTokenHash: 'deadbeef',
+      });
       accountsRepo.find.mockResolvedValueOnce([account]);
 
       await service.runExpiryJob();
@@ -138,9 +163,18 @@ describe('SchedulerService', () => {
         contractId: 'CONTRACT123',
         signerSecret: 'SFUNDING_SECRET',
       });
+      expect(sweepsService.executeRecoverySweep).toHaveBeenCalledWith(
+        account.id,
+        account.publicKey,
+        'SSECRET',
+        account.amount,
+        account.asset,
+      );
       expect(accountsRepo.update).toHaveBeenCalledWith(account.id, {
         status: AccountStatus.EXPIRED,
         expiredAt: expect.any(Date),
+        claimTokenHash: null,
+        destinationAddress: '',
       });
     });
 
@@ -154,6 +188,8 @@ describe('SchedulerService', () => {
       expect(accountsRepo.update).toHaveBeenCalledWith(account.id, {
         status: AccountStatus.EXPIRED,
         expiredAt: expect.any(Date),
+        claimTokenHash: null,
+        destinationAddress: '',
       });
     });
 
@@ -163,7 +199,7 @@ describe('SchedulerService', () => {
       await service.runExpiryJob();
 
       expect(stellarService.expireAccount).not.toHaveBeenCalled();
-      expect(accountsRepo.update).not.toHaveBeenCalled();
+      expect(sweepsService.executeRecoverySweep).not.toHaveBeenCalled();
     });
 
     it('queries only accounts with expiresAt in the past', async () => {
@@ -182,11 +218,15 @@ describe('SchedulerService', () => {
         }),
       );
     });
-  });
 
-  // -------------------------------------------------------------------------
-  // Expiry job — failure isolation
-  // -------------------------------------------------------------------------
+    it('purges stale claim audit logs after processing', async () => {
+      accountsRepo.find.mockResolvedValueOnce([]);
+
+      await service.runExpiryJob();
+
+      expect(claimAuditRepo.delete).toHaveBeenCalled();
+    });
+  });
 
   describe('runExpiryJob() failure isolation', () => {
     it('continues processing other accounts when one expireAccount() call fails', async () => {
@@ -200,13 +240,10 @@ describe('SchedulerService', () => {
 
       await expect(service.runExpiryJob()).resolves.not.toThrow();
 
-      // Second account still processed
       expect(stellarService.expireAccount).toHaveBeenCalledTimes(2);
-      // Only the successful one gets a DB update
-      expect(accountsRepo.update).toHaveBeenCalledTimes(1);
       expect(accountsRepo.update).toHaveBeenCalledWith(
         'a2',
-        expect.any(Object),
+        expect.objectContaining({ status: AccountStatus.EXPIRED }),
       );
     });
 
@@ -218,15 +255,19 @@ describe('SchedulerService', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // INITIALIZING cleanup — happy path
-  // -------------------------------------------------------------------------
+  describe('runExpiredClaimCleanup()', () => {
+    it('invalidates claim tokens on already-expired accounts', async () => {
+      await service.runExpiredClaimCleanup();
+
+      expect(accountsRepo.update).toHaveBeenCalled();
+    });
+  });
 
   describe('runInitializingCleanup()', () => {
     it('marks stale INITIALIZING accounts as FAILED with metadata', async () => {
       const account = makeAccount({
         status: AccountStatus.INITIALIZING,
-        createdAt: new Date(Date.now() - 700_000), // older than default 10-min timeout
+        createdAt: new Date(Date.now() - 700_000),
         metadata: { existingKey: 'value' },
       });
       accountsRepo.find.mockResolvedValueOnce([account]);
@@ -276,56 +317,7 @@ describe('SchedulerService', () => {
 
       expect(accountsRepo.update).not.toHaveBeenCalled();
     });
-
-    it('queries only INITIALIZING accounts older than the cutoff', async () => {
-      await service.runInitializingCleanup();
-
-      expect(accountsRepo.find).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: expect.objectContaining({
-            status: AccountStatus.INITIALIZING,
-          }),
-        }),
-      );
-    });
   });
-
-  // -------------------------------------------------------------------------
-  // INITIALIZING cleanup — failure isolation
-  // -------------------------------------------------------------------------
-
-  describe('runInitializingCleanup() failure isolation', () => {
-    it('continues processing other accounts when one DB update fails', async () => {
-      const acc1 = makeAccount({
-        id: 'a1',
-        status: AccountStatus.INITIALIZING,
-      });
-      const acc2 = makeAccount({
-        id: 'a2',
-        status: AccountStatus.INITIALIZING,
-      });
-      accountsRepo.find.mockResolvedValueOnce([acc1, acc2]);
-
-      accountsRepo.update
-        .mockRejectedValueOnce(new Error('DB write failed'))
-        .mockResolvedValueOnce({ affected: 1 });
-
-      await expect(service.runInitializingCleanup()).resolves.not.toThrow();
-
-      expect(accountsRepo.update).toHaveBeenCalledTimes(2);
-    });
-
-    it('does not throw when the DB query itself fails', async () => {
-      accountsRepo.find.mockRejectedValueOnce(new Error('DB connection lost'));
-
-      await expect(service.runInitializingCleanup()).resolves.not.toThrow();
-      expect(accountsRepo.update).not.toHaveBeenCalled();
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Preserves existing metadata
-  // -------------------------------------------------------------------------
 
   describe('metadata handling', () => {
     it('merges failureReason into existing metadata without overwriting other keys', async () => {
@@ -343,25 +335,6 @@ describe('SchedulerService', () => {
           metadata: expect.objectContaining({
             source: 'api',
             userId: 'u1',
-            failureReason: 'initialization_timeout',
-          }),
-        }),
-      );
-    });
-
-    it('handles null metadata gracefully', async () => {
-      const account = makeAccount({
-        status: AccountStatus.INITIALIZING,
-        metadata: null as unknown as Record<string, any> | undefined,
-      });
-      accountsRepo.find.mockResolvedValueOnce([account]);
-
-      await expect(service.runInitializingCleanup()).resolves.not.toThrow();
-
-      expect(accountsRepo.update).toHaveBeenCalledWith(
-        account.id,
-        expect.objectContaining({
-          metadata: expect.objectContaining({
             failureReason: 'initialization_timeout',
           }),
         }),

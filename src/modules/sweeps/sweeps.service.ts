@@ -17,6 +17,7 @@ import { Account } from '../accounts/entities/account.entity.js';
 import { AccountStatus } from '../accounts/enums/account-status.enum.js';
 import { Claim } from '../claims/entities/claim.entity.js';
 import type { SweepStatusResponseDto } from './dto/sweep-status-response.dto.js';
+import { SweepKind } from './enums/sweep-kind.enum.js';
 
 @Injectable()
 export class SweepsService {
@@ -70,10 +71,17 @@ export class SweepsService {
     );
 
     try {
-      // Step 1: Validate sweep parameters
-      await this.validationProvider.validateSweepParameters(
-        sweepExecutionRequest,
-      );
+      // Step 1: Validate sweep parameters and resolve the authoritative
+      // destination (from the locked claim record or recovery config).
+      const { destinationAddress } =
+        await this.validationProvider.validateSweepParameters(
+          sweepExecutionRequest,
+        );
+
+      const sweepKind = sweepExecutionRequest.sweepKind ?? SweepKind.CLAIM;
+      const skipContractAuth =
+        sweepExecutionRequest.skipContractAuth ??
+        sweepKind === SweepKind.RECOVERY;
 
       // Steps 2 & 3: Smart-contract authorization.
       // On a retry into PARTIAL_SWEEP the contract is already in Swept state
@@ -82,20 +90,22 @@ export class SweepsService {
       // we synthesise the auth hash deterministically from the same inputs
       // for audit-trail purposes.
       let contractAuthHash: string;
-      if (sweepExecutionRequest.skipContractAuth) {
+      if (skipContractAuth) {
         this.logger.log(
-          `Skip-contract-auth retry for account ${sweepExecutionRequest.accountId}: ` +
-            'contract already in Swept state from prior partial failure.',
+          `Skip-contract-auth for account ${sweepExecutionRequest.accountId}` +
+            (sweepKind === SweepKind.RECOVERY
+              ? ' (recovery sweep after expiry).'
+              : ': contract already in Swept state from prior partial failure.'),
         );
         contractAuthHash = this.contractProvider.generateAuthHash(
           sweepExecutionRequest.ephemeralPublicKey,
-          sweepExecutionRequest.destinationAddress,
+          destinationAddress,
         );
       } else {
         // Step 2: Generate authorization signature for the contract call
         const authSignature = this.contractProvider.generateAuthSignature({
           ephemeralPublicKey: sweepExecutionRequest.ephemeralPublicKey,
-          destinationAddress: sweepExecutionRequest.destinationAddress,
+          destinationAddress,
         });
 
         // Step 3: Submit execute_sweep() on the SweepController Soroban contract
@@ -110,7 +120,7 @@ export class SweepsService {
         await this.stellarService.executeSweep({
           sweepControllerContractId,
           ephemeralAccountContractId,
-          destination: sweepExecutionRequest.destinationAddress,
+          destination: destinationAddress,
           authSignature,
           signerSecret: sweepExecutionRequest.ephemeralSecret,
         });
@@ -121,7 +131,7 @@ export class SweepsService {
 
         contractAuthHash = this.contractProvider.generateAuthHash(
           sweepExecutionRequest.ephemeralPublicKey,
-          sweepExecutionRequest.destinationAddress,
+          destinationAddress,
         );
       }
 
@@ -131,7 +141,7 @@ export class SweepsService {
         transactionResult =
           await this.transactionProvider.executeSweepTransaction({
             ephemeralSecret: sweepExecutionRequest.ephemeralSecret,
-            destinationAddress: sweepExecutionRequest.destinationAddress,
+            destinationAddress,
             amount: sweepExecutionRequest.amount,
             asset: sweepExecutionRequest.asset,
           });
@@ -164,7 +174,7 @@ export class SweepsService {
           isPartial: true,
           contractAuthHash,
           amountSwept: sweepExecutionRequest.amount,
-          destination: sweepExecutionRequest.destinationAddress,
+          destination: destinationAddress,
           error: message,
         };
       }
@@ -174,7 +184,7 @@ export class SweepsService {
         await this.sweepAdditionalAssets(
           sweepExecutionRequest.ephemeralPublicKey,
           sweepExecutionRequest.ephemeralSecret,
-          sweepExecutionRequest.destinationAddress,
+          destinationAddress,
           sweepExecutionRequest.asset,
         );
       }
@@ -186,7 +196,7 @@ export class SweepsService {
       try {
         const mergeResult = await this.transactionProvider.mergeAccount({
           ephemeralSecret: sweepExecutionRequest.ephemeralSecret,
-          destinationAddress: sweepExecutionRequest.destinationAddress,
+          destinationAddress,
         });
         mergeHash = mergeResult.hash;
         this.logger.log(
@@ -211,7 +221,7 @@ export class SweepsService {
         txHash: transactionResult.hash,
         contractAuthHash,
         amountSwept: sweepExecutionRequest.amount,
-        destination: sweepExecutionRequest.destinationAddress,
+        destination: destinationAddress,
         timestamp: transactionResult.timestamp,
         ...(mergeHash !== undefined && { mergeHash }),
       };
@@ -228,6 +238,33 @@ export class SweepsService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Sweep expired account funds to the configured recovery address.
+   * Uses a distinct authorization path from claim-triggered sweeps: the
+   * destination is always derived from `stellar.recoveryPublic` and
+   * contract auth is skipped because on-chain expiry was already processed.
+   */
+  public async executeRecoverySweep(
+    accountId: string,
+    ephemeralPublicKey: string,
+    ephemeralSecret: string,
+    amount: string,
+    asset: string,
+  ): Promise<SweepResult> {
+    this.logger.log(
+      `Executing recovery sweep for expired account: ${accountId}`,
+    );
+
+    return this.executeSweep({
+      accountId,
+      ephemeralPublicKey,
+      ephemeralSecret,
+      amount,
+      asset,
+      sweepKind: SweepKind.RECOVERY,
+    });
   }
 
   /**

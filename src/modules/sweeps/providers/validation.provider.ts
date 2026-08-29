@@ -3,13 +3,22 @@ import {
   BadRequestException,
   NotFoundException,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Account } from '../../accounts/entities/account.entity.js';
 import type { SweepExecutionRequest } from '../interfaces/execute-sweep.interface.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
 import { StellarAddressValidator } from '../../../common/validators/stellar-address.validator.js';
+import { SweepKind } from '../enums/sweep-kind.enum.js';
+import { LogSanitizer } from '../../../common/utils/log-sanitizer.util.js';
+
+export interface ValidatedSweepContext {
+  account: Account;
+  destinationAddress: string;
+}
 
 @Injectable()
 export class ValidationProvider {
@@ -18,24 +27,22 @@ export class ValidationProvider {
   constructor(
     @InjectRepository(Account)
     private readonly accountRepository: Repository<Account>,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
-   * Validate all sweep parameters before execution
+   * Validate all sweep parameters before execution and return the
+   * authoritative destination address for the sweep transaction.
    */
   public async validateSweepParameters(
     sweepExecutionRequest: SweepExecutionRequest,
-  ): Promise<void> {
+  ): Promise<ValidatedSweepContext> {
+    const sweepKind = sweepExecutionRequest.sweepKind ?? SweepKind.CLAIM;
+
     this.logger.log(
-      `Validating sweep parameters for account: ${sweepExecutionRequest.accountId}`,
+      `Validating ${sweepKind} sweep parameters for account: ${sweepExecutionRequest.accountId}`,
     );
 
-    // Validate destination address
-    StellarAddressValidator.assertValid(
-      sweepExecutionRequest.destinationAddress,
-    );
-
-    // Validate account exists and is in correct state
     const account = await this.accountRepository.findOne({
       where: { id: sweepExecutionRequest.accountId },
     });
@@ -46,56 +53,132 @@ export class ValidationProvider {
       );
     }
 
-    // Validate ephemeral public key matches
     if (account.publicKey !== sweepExecutionRequest.ephemeralPublicKey) {
       throw new BadRequestException('Ephemeral public key mismatch');
     }
 
-    // Check account status
-    // Verify account has received payment
-    if (account.status === AccountStatus.PENDING_PAYMENT) {
-      throw new BadRequestException('Account has not received payment yet');
-    }
-
-    if (account.status !== AccountStatus.PENDING_CLAIM) {
-      throw new BadRequestException(
-        `Account cannot be swept. Status: ${account.status}`,
-      );
-    }
-
-    // Check account hasn't expired
-    if (new Date() > account.expiresAt) {
-      throw new BadRequestException('Account has expired');
-    }
-
-    // Validate amount is positive
     const amount = parseFloat(sweepExecutionRequest.amount);
     if (isNaN(amount) || amount <= 0) {
       throw new BadRequestException('Amount must be a positive number');
     }
 
-    // Validate amount matches account balance
     if (sweepExecutionRequest.amount !== account.amount) {
       throw new BadRequestException(
         `Amount mismatch: expected ${account.amount}, got ${sweepExecutionRequest.amount}`,
       );
     }
 
-    // Validate asset format
     if (!this.isValidAssetFormat(sweepExecutionRequest.asset)) {
       throw new BadRequestException('Invalid asset format');
     }
 
-    // Validate asset matches
     if (sweepExecutionRequest.asset !== account.asset) {
       throw new BadRequestException(
         `Asset mismatch: expected ${account.asset}, got ${sweepExecutionRequest.asset}`,
       );
     }
 
+    if (sweepKind === SweepKind.RECOVERY) {
+      return this.validateRecoverySweep(account, sweepExecutionRequest);
+    }
+
+    return this.validateClaimSweep(account, sweepExecutionRequest);
+  }
+
+  private validateClaimSweep(
+    account: Account,
+    sweepExecutionRequest: SweepExecutionRequest,
+  ): ValidatedSweepContext {
+    if (account.status === AccountStatus.PENDING_PAYMENT) {
+      throw new BadRequestException('Account has not received payment yet');
+    }
+
+    if (
+      account.status !== AccountStatus.PENDING_CLAIM &&
+      account.status !== AccountStatus.CLAIMING &&
+      account.status !== AccountStatus.PARTIAL_SWEEP
+    ) {
+      throw new BadRequestException(
+        `Account cannot be swept. Status: ${account.status}`,
+      );
+    }
+
+    if (new Date() > account.expiresAt) {
+      throw new BadRequestException('Account has expired');
+    }
+
+    const authorizedDestination = account.destinationAddress?.trim();
+    if (!authorizedDestination) {
+      throw new BadRequestException(
+        'No authorized destination on account — claim must be locked before sweep',
+      );
+    }
+
+    StellarAddressValidator.assertValid(authorizedDestination);
+
+    const attemptedDestination =
+      sweepExecutionRequest.destinationAddress?.trim();
+    if (
+      attemptedDestination &&
+      attemptedDestination !== authorizedDestination
+    ) {
+      this.logger.error(
+        `SECURITY: sweep destination mismatch for account ${account.id}. ` +
+          `Authorized=${LogSanitizer.redactAddress(authorizedDestination)}, ` +
+          `Attempted=${LogSanitizer.redactAddress(attemptedDestination)}`,
+      );
+      throw new ForbiddenException('Sweep destination not authorized');
+    }
+
     this.logger.log(
-      `Validation passed for account: ${sweepExecutionRequest.accountId}`,
+      `Validation passed for claim sweep on account: ${account.id}`,
     );
+
+    return { account, destinationAddress: authorizedDestination };
+  }
+
+  private validateRecoverySweep(
+    account: Account,
+    sweepExecutionRequest: SweepExecutionRequest,
+  ): ValidatedSweepContext {
+    if (
+      account.status !== AccountStatus.PENDING_PAYMENT &&
+      account.status !== AccountStatus.PENDING_CLAIM
+    ) {
+      throw new BadRequestException(
+        `Account cannot be recovery-swept. Status: ${account.status}`,
+      );
+    }
+
+    if (new Date() <= account.expiresAt) {
+      throw new BadRequestException('Account has not expired yet');
+    }
+
+    const recoveryPublic = this.configService.get<string>(
+      'stellar.recoveryPublic',
+    );
+    if (!recoveryPublic) {
+      throw new BadRequestException('Recovery account is not configured');
+    }
+
+    StellarAddressValidator.assertValid(recoveryPublic);
+
+    const attemptedDestination =
+      sweepExecutionRequest.destinationAddress?.trim();
+    if (attemptedDestination && attemptedDestination !== recoveryPublic) {
+      this.logger.error(
+        `SECURITY: recovery sweep destination substitution blocked for account ` +
+          `${account.id}. Expected recovery account, attempted ` +
+          `${LogSanitizer.redactAddress(attemptedDestination)}`,
+      );
+      throw new ForbiddenException('Recovery sweep destination not authorized');
+    }
+
+    this.logger.log(
+      `Validation passed for recovery sweep on account: ${account.id}`,
+    );
+
+    return { account, destinationAddress: recoveryPublic };
   }
 
   /**
@@ -113,6 +196,7 @@ export class ValidationProvider {
       if (!account) return false;
       if (account.status !== AccountStatus.PENDING_CLAIM) return false;
       if (new Date() > account.expiresAt) return false;
+      if (account.destinationAddress !== destinationAddress) return false;
 
       StellarAddressValidator.assertValid(destinationAddress);
       return true;
@@ -158,6 +242,10 @@ export class ValidationProvider {
       return { canSweep: false, reason: 'Account expired' };
     }
 
+    if (!account.destinationAddress) {
+      return { canSweep: false, reason: 'Claim not initiated' };
+    }
+
     return { canSweep: true };
   }
 
@@ -169,19 +257,16 @@ export class ValidationProvider {
       return true;
     }
 
-    // Format: CODE:ISSUER
     const parts = asset.split(':');
     if (parts.length !== 2) {
       return false;
     }
 
     const [code, issuer] = parts;
-    // Asset code: 1-12 alphanumeric characters
     if (!/^[a-zA-Z0-9]{1,12}$/.test(code)) {
       return false;
     }
 
-    // Issuer must be valid Stellar address
     return StellarAddressValidator.isValid(issuer);
   }
 }

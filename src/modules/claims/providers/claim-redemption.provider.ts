@@ -23,6 +23,7 @@ import { StellarAddressValidator } from '../../../common/validators/stellar-addr
 import { WebhooksService } from '../../webhooks/webhooks.service.js';
 import { ClaimAuditProvider } from './claim-audit.provider.js';
 import { LogSanitizer } from '../../../common/utils/log-sanitizer.util.js';
+import { SweepKind } from '../../sweeps/enums/sweep-kind.enum.js';
 
 @Injectable()
 export class ClaimRedemptionProvider {
@@ -186,12 +187,13 @@ export class ClaimRedemptionProvider {
           account.secretKeyEncrypted,
           this.kmsKeyProvider.getEncryptionKey(),
         ),
-        destinationAddress,
         amount: account.amount,
         asset: account.asset,
+        sweepKind: SweepKind.CLAIM,
+        // Destination is derived from account.destinationAddress set during
+        // the redemption lock above — not from caller-supplied parameters.
         // PARTIAL_SWEEP retry: contract is already in Swept state from the
         // prior partial failure, so re-invoking execute_sweep would revert.
-        // Skip steps 2-3 and only re-submit the Horizon payment.
         skipContractAuth: wasPartialOnEntry,
       });
 

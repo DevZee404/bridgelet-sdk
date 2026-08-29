@@ -11,6 +11,7 @@ import { Claim } from '../entities/claim.entity.js';
 import { Account } from '../../accounts/entities/account.entity.js';
 import { SweepsService } from '../../sweeps/sweeps.service.js';
 import { AccountStatus } from '../../accounts/enums/account-status.enum.js';
+import { SweepKind } from '../../sweeps/enums/sweep-kind.enum.js';
 import { ConfigService } from '@nestjs/config';
 import { SecretEncryptionUtil } from '../../../common/crypto/secret-encryption.util.js';
 import { WebhooksService } from '../../webhooks/webhooks.service.js';
@@ -254,10 +255,9 @@ describe('ClaimRedemptionProvider', () => {
         accountId: mockAccount.id,
         ephemeralPublicKey: mockAccount.publicKey,
         ephemeralSecret: 'test-secret',
-        destinationAddress: VALID_DESTINATION,
         amount: mockAccount.amount,
         asset: mockAccount.asset,
-        // Fresh PENDING_CLAIM attempt -> contract auth must run.
+        sweepKind: SweepKind.CLAIM,
         skipContractAuth: false,
       });
     });

@@ -278,10 +278,7 @@ export class StellarService {
     const remainingSeconds = expiresAt
       ? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 1000))
       : expiresInSeconds;
-    const ledgersUntilExpiry = Math.max(
-      1,
-      Math.ceil(remainingSeconds / 5),
-    );
+    const ledgersUntilExpiry = Math.max(1, Math.ceil(remainingSeconds / 5));
     return currentLedger + ledgersUntilExpiry + EXPIRY_BUFFER_LEDGERS;
   }
 
