@@ -97,13 +97,13 @@ in-flight financial operations.
 
 **Recommended configuration:**
 
-| Parameter | Recommended value |
-|-----------|------------------|
-| Full backup frequency | Daily |
-| WAL archiving (PITR) | Continuous |
-| Backup retention | 30 days |
-| RPO target | < 5 minutes |
-| RTO target | < 1 hour |
+| Parameter             | Recommended value |
+| --------------------- | ----------------- |
+| Full backup frequency | Daily             |
+| WAL archiving (PITR)  | Continuous        |
+| Backup retention      | 30 days           |
+| RPO target            | < 5 minutes       |
+| RTO target            | < 1 hour          |
 
 ### Taking a backup (pg_dump)
 
