@@ -1,0 +1,22 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 1
+      arrivalCount: 20
+  variables:
+    claimToken: 'REPLACE_WITH_SEEDED_TOKEN'
+    destinationAddress: 'GBMOCKDESTINATIONACCOUNTXXXXXXXXXXXXXXXXXXXXXXXXXX'
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+scenarios:
+  - name: Concurrent redemption of the same claim token (double-spend race)
+    flow:
+      - post:
+          url: '/claims/redeem'
+          json:
+            claimToken: '{{ claimToken }}'
+            destinationAddress: '{{ destinationAddress }}'
+          capture:
+            - json: '$.statusCode'
+              as: statusCode
