@@ -17,19 +17,15 @@ const SANDBOX_ENABLED =
 (SANDBOX_ENABLED ? describe : describe.skip)(
   'Expired-account recovery sweep (local sandbox)',
   () => {
-    it(
-      'creates an account with short expiry, waits for expiry, then verifies recovery sweep executes and funds reach RECOVERY_ACCOUNT_PUBLIC',
-      async () => {
-        // TODO: implement once sandbox environment is provisioned (issue #524)
-        // Steps:
-        // 1. POST /accounts with expiresIn = 10
-        // 2. Wait > 10s
-        // 3. Trigger expiry sweep via scheduler or direct service call
-        // 4. Assert account.status === EXPIRED
-        // 5. Assert RECOVERY_ACCOUNT_PUBLIC balance increased by funded amount
-        expect(true).toBe(true); // placeholder — replace with real assertions
-      },
-      120_000,
-    );
+    it('creates an account with short expiry, waits for expiry, then verifies recovery sweep executes and funds reach RECOVERY_ACCOUNT_PUBLIC', async () => {
+      // TODO: implement once sandbox environment is provisioned (issue #524)
+      // Steps:
+      // 1. POST /accounts with expiresIn = 10
+      // 2. Wait > 10s
+      // 3. Trigger expiry sweep via scheduler or direct service call
+      // 4. Assert account.status === EXPIRED
+      // 5. Assert RECOVERY_ACCOUNT_PUBLIC balance increased by funded amount
+      expect(true).toBe(true); // placeholder — replace with real assertions
+    }, 120_000);
   },
 );

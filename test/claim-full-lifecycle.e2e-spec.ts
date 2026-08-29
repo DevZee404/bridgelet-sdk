@@ -16,19 +16,15 @@ const SANDBOX_ENABLED =
 (SANDBOX_ENABLED ? describe : describe.skip)(
   'Full account lifecycle: create -> claim -> sweep (local sandbox)',
   () => {
-    it(
-      'creates an account, initiates a claim, redeems it, and confirms on-chain and off-chain state reflect successful sweep completion',
-      async () => {
-        // TODO: implement once sandbox environment is provisioned (issue #523)
-        // Steps:
-        // 1. POST /accounts -> accountId + claimToken
-        // 2. POST /claims/initiate
-        // 3. POST /claims/redeem with claimToken + destinationAddress
-        // 4. Assert account.status === SWEPT
-        // 5. Assert destination balance increased on-chain
-        expect(true).toBe(true); // placeholder — replace with real assertions
-      },
-      180_000,
-    );
+    it('creates an account, initiates a claim, redeems it, and confirms on-chain and off-chain state reflect successful sweep completion', async () => {
+      // TODO: implement once sandbox environment is provisioned (issue #523)
+      // Steps:
+      // 1. POST /accounts -> accountId + claimToken
+      // 2. POST /claims/initiate
+      // 3. POST /claims/redeem with claimToken + destinationAddress
+      // 4. Assert account.status === SWEPT
+      // 5. Assert destination balance increased on-chain
+      expect(true).toBe(true); // placeholder — replace with real assertions
+    }, 180_000);
   },
 );
