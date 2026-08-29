@@ -261,24 +261,14 @@ If you notice issues outside your scope, open a separate issue instead.
 
 **Thank you for helping improve Bridgelet SDK!** 🚀
 
-### Test Data Factories
+### Keeping the migration integration test current
 
-Shared factory utilities for constructing valid test entities live in `src/testing/factories/`. Use them in unit and integration tests to avoid duplicating setup code:
+Whenever you add a new migration, you **must** also update `src/database/migrations.integration.spec.ts` to cover the new table, column, or index.
 
-```typescript
-import { makeAccount, makeClaim, makeWebhook } from '../../testing/factories/index.js';
+Checklist for every new migration PR:
 
-// Create a test account with defaults
-const account = makeAccount();
+- [ ] New migration file added to `scripts/generate-migrations.sh` (see above)
+- [ ] `src/database/migrations.integration.spec.ts` updated to assert the new schema element exists
+- [ ] `README.md` migration list updated
 
-// Override specific fields
-const expiredAccount = makeAccount({ status: AccountStatus.EXPIRED });
-
-// Create a claim linked to the account
-const claim = makeClaim({ accountId: account.id });
-
-// Create a webhook subscription
-const webhook = makeWebhook({ url: 'https://example.com/hook' });
-```
-
-All factories accept an optional partial override object. Sensible defaults are provided for all required fields. See `src/testing/factories/` for available factories and their default values.
+CI does **not** currently hard-block on a missing test update, but reviewers will request changes if this step is skipped.

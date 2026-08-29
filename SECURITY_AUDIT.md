@@ -170,3 +170,28 @@ account's details across tenants.
 
 Unit tests in `accounts.service.spec.ts` assert that cross-integrator access
 returns `NotFoundException` and that `create()` stamps the `integratorId`.
+
+---
+
+## Issue #527 — Sweep Authorization Production Guard Bypass Analysis
+
+### Threat model
+
+The `generateAuthSignature` method in `ContractProvider` throws immediately in
+`NODE_ENV=production` unless `SWEEP_SIGNING_KEY_SEED` is a valid 32-byte Ed25519 seed.
+This prevents a mis-configured production deployment from sending unauthorized sweeps
+using a stub/placeholder signature.
+
+### Bypass vectors assessed
+
+| Vector                                       | Assessment                                                                                                                                                                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NODE_ENV` spoofing from request context     | **Not possible.** `process.env` is shared and set at startup; no per-request mutation path exists in the NestJS HTTP lifecycle.                                                                                    |
+| Setting `NODE_ENV=development` in production | **Deployment-level control.** Secrets manager injection and container configuration control env vars; a correct deployment policy prevents this.                                                                   |
+| Passing a 32-byte placeholder seed           | The guard only checks byte length (32 bytes), not entropy. A low-entropy seed would pass the guard but produce a weak signature — acceptable given the stub contract also accepts any signature in non-production. |
+
+### Conclusion
+
+No practical bypass vector exists in a correctly configured deployment. The guard is a
+last-line-of-defence mis-configuration detector, not a cryptographic control. Real sweep
+security depends on Ed25519 signature verification in the deployed `bridgelet-core` contract.
