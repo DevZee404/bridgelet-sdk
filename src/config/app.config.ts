@@ -20,6 +20,11 @@ export default registerAs('app', () => ({
     process.env.WEBHOOK_HEALTH_CHECK_INTERVAL_MS ?? '300000',
     10,
   ),
+  /** Days to retain claim audit log rows before the expiry job purges them. */
+  claimAuditRetentionDays: parseInt(
+    process.env.CLAIM_AUDIT_RETENTION_DAYS ?? '90',
+    10,
+  ),
   logLevel: process.env.LOG_LEVEL ?? 'info',
   enableSwagger: process.env.ENABLE_SWAGGER === 'true',
 }));

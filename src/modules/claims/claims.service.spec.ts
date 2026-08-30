@@ -3,6 +3,7 @@ import { ClaimsService } from './claims.service.js';
 import { ClaimLookupProvider } from './providers/claim-lookup.provider.js';
 import { TokenVerificationProvider } from './providers/token-verification.provider.js';
 import { ClaimRedemptionProvider } from './providers/claim-redemption.provider.js';
+import { ClaimInitiationProvider } from './providers/claim-initiation.provider.js';
 import { ClaimDetailsDto } from './dto/claim-details.dto.js';
 import { ClaimVerificationResponseDto } from './dto/claim-verification-response.dto.js';
 import { ClaimRedemptionResponseDto } from './dto/claim-redemption-response.dto.js';
@@ -29,6 +30,7 @@ describe('ClaimsService Integration Tests', () => {
   let claimLookupProvider: jest.Mocked<ClaimLookupProvider>;
   let tokenVerificationProvider: jest.Mocked<TokenVerificationProvider>;
   let claimRedemptionProvider: jest.Mocked<ClaimRedemptionProvider>;
+  let claimInitiationProvider: jest.Mocked<ClaimInitiationProvider>;
 
   // Mock data for integration tests
   const mockClaimId = 'claim-id-123';
@@ -77,6 +79,10 @@ describe('ClaimsService Integration Tests', () => {
       redeemClaim: jest.fn(),
     } as any;
 
+    claimInitiationProvider = {
+      initiateClaim: jest.fn(),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ClaimsService,
@@ -91,6 +97,10 @@ describe('ClaimsService Integration Tests', () => {
         {
           provide: ClaimRedemptionProvider,
           useValue: claimRedemptionProvider,
+        },
+        {
+          provide: ClaimInitiationProvider,
+          useValue: claimInitiationProvider,
         },
         {
           provide: getToken('claim_redemption_total'),

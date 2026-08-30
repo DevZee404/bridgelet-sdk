@@ -4,7 +4,9 @@ import { TokenVerificationProvider } from './providers/token-verification.provid
 import { ClaimDetailsDto } from './dto/claim-details.dto.js';
 import { ClaimVerificationResponseDto } from './dto/claim-verification-response.dto.js';
 import { ClaimRedemptionProvider } from './providers/claim-redemption.provider.js';
+import { ClaimInitiationProvider } from './providers/claim-initiation.provider.js';
 import { ClaimRedemptionResponseDto } from './dto/claim-redemption-response.dto.js';
+import { InitiateClaimResponseDto } from './dto/initiate-claim-response.dto.js';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Counter } from 'prom-client';
 
@@ -14,6 +16,7 @@ export class ClaimsService {
     private readonly claimLookupProvider: ClaimLookupProvider,
     private readonly tokenVerificationProvider: TokenVerificationProvider,
     private claimRedemptionProvider: ClaimRedemptionProvider,
+    private claimInitiationProvider: ClaimInitiationProvider,
     @InjectMetric('claim_redemption_total')
     private readonly claimRedemptionCounter: Counter<string>,
   ) {}
@@ -33,5 +36,12 @@ export class ClaimsService {
   ): Promise<ClaimRedemptionResponseDto> {
     this.claimRedemptionCounter.inc();
     return this.claimRedemptionProvider.redeemClaim(token, destinationAddress);
+  }
+
+  public async initiateClaim(
+    accountId: string,
+    integratorId: string,
+  ): Promise<InitiateClaimResponseDto> {
+    return this.claimInitiationProvider.initiateClaim(accountId, integratorId);
   }
 }

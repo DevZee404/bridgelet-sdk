@@ -5,13 +5,17 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { IsNull, LessThan, Not, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { StellarService } from '../stellar/stellar.service.js';
 import { Account } from '../accounts/entities/account.entity.js';
 import { AccountStatus } from '../accounts/enums/account-status.enum.js';
 import { assertValidAccountStatusTransition } from '../accounts/enums/account-status-transitions.js';
 import { WebhooksService } from '../webhooks/webhooks.service.js';
+import { SweepsService } from '../sweeps/sweeps.service.js';
+import { ClaimAuditLog } from '../claims/entities/claim-audit-log.entity.js';
+import { SecretEncryptionUtil } from '../../common/crypto/secret-encryption.util.js';
+import { KmsKeyProvider } from '../../common/crypto/kms-key.provider.js';
 
 @Injectable()
 export class SchedulerService implements OnModuleInit, OnModuleDestroy {
@@ -22,9 +26,13 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @InjectRepository(Account)
     private readonly accountsRepository: Repository<Account>,
+    @InjectRepository(ClaimAuditLog)
+    private readonly claimAuditRepository: Repository<ClaimAuditLog>,
     private readonly stellarService: StellarService,
+    private readonly sweepsService: SweepsService,
     private readonly configService: ConfigService,
     private readonly webhooksService: WebhooksService,
+    private readonly kmsKeyProvider: KmsKeyProvider,
   ) {}
 
   onModuleInit(): void {
@@ -66,8 +74,9 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Expires all PENDING_PAYMENT and PENDING_CLAIM accounts whose expiresAt
-   * has passed. Calls StellarService.expireAccount() then sets status to
-   * EXPIRED and records expiredAt. Per-account failures are isolated.
+   * has passed. Calls StellarService.expireAccount(), triggers the recovery
+   * sweep path, invalidates unredeemed claim tokens, and records expiredAt.
+   * Per-account failures are isolated.
    */
   async runExpiryJob(): Promise<void> {
     const now = new Date();
@@ -86,7 +95,11 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    if (accounts.length === 0) return;
+    if (accounts.length === 0) {
+      await this.purgeStaleClaimAuditLogs();
+      await this.runExpiredClaimCleanup();
+      return;
+    }
 
     this.logger.debug(
       `Expiry job: processing ${accounts.length} expired account(s)`,
@@ -95,6 +108,9 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     await Promise.allSettled(
       accounts.map((account) => this.expireAccount(account)),
     );
+
+    await this.purgeStaleClaimAuditLogs();
+    await this.runExpiredClaimCleanup();
   }
 
   private async expireAccount(account: Account): Promise<void> {
@@ -109,6 +125,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
+
     try {
       await this.stellarService.expireAccount({ contractId, signerSecret });
     } catch (err: unknown) {
@@ -119,19 +136,117 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    await this.runRecoverySweepForAccount(account);
+
     const expiredAt = new Date();
     assertValidAccountStatusTransition(account.status, AccountStatus.EXPIRED);
     await this.accountsRepository.update(account.id, {
       status: AccountStatus.EXPIRED,
       expiredAt,
+      claimTokenHash: null,
+      destinationAddress: '',
     });
-    this.logger.log(`Account ${account.id} status → EXPIRED`);
+    this.logger.log(
+      `Account ${account.id} status → EXPIRED (claim token invalidated)`,
+    );
 
     await this.webhooksService.triggerEvent('account.expired', {
       accountId: account.id,
       publicKey: account.publicKey,
       expiredAt,
     });
+  }
+
+  /**
+   * Recovery sweep for expired, never-redeemed accounts. Distinct from the
+   * claim redemption path — destination is always RECOVERY_ACCOUNT_PUBLIC.
+   */
+  private async runRecoverySweepForAccount(account: Account): Promise<void> {
+    if (!account.publicKey || !account.secretKeyEncrypted) {
+      this.logger.warn(
+        `Recovery sweep skipped for account ${account.id}: missing keys`,
+      );
+      return;
+    }
+
+    try {
+      const ephemeralSecret = SecretEncryptionUtil.decrypt(
+        account.secretKeyEncrypted,
+        this.kmsKeyProvider.getEncryptionKey(),
+      );
+
+      const result = await this.sweepsService.executeRecoverySweep(
+        account.id,
+        account.publicKey,
+        ephemeralSecret,
+        account.amount,
+        account.asset,
+      );
+
+      if (result.success) {
+        this.logger.log(
+          `Recovery sweep completed for account ${account.id}: txHash=${result.txHash}`,
+        );
+      } else {
+        this.logger.warn(
+          `Recovery sweep partial/failed for account ${account.id}: ${result.error ?? 'unknown'}`,
+        );
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Recovery sweep failed for account ${account.id}: ${msg}`,
+      );
+    }
+  }
+
+  /**
+   * Purges claim audit log rows older than the configured retention window.
+   * Unredeemed claim tokens on already-expired accounts are cleared by
+   * {@link expireAccount}; this handles audit-trail lifecycle separately.
+   */
+  async purgeStaleClaimAuditLogs(): Promise<void> {
+    const retentionDays =
+      this.configService.get<number>('app.claimAuditRetentionDays') ?? 90;
+    const cutoff = new Date(Date.now() - retentionDays * 86_400_000);
+
+    try {
+      const result = await this.claimAuditRepository.delete({
+        attemptedAt: LessThan(cutoff),
+      });
+      if (result.affected && result.affected > 0) {
+        this.logger.log(
+          `Purged ${result.affected} claim audit log row(s) older than ${retentionDays} days`,
+        );
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Claim audit log purge failed: ${msg}`);
+    }
+  }
+
+  /**
+   * Secondary pass: invalidate claim tokens on EXPIRED accounts that still
+   * carry a hash (e.g. from a prior partial expiry run).
+   */
+  async runExpiredClaimCleanup(): Promise<void> {
+    try {
+      const result = await this.accountsRepository.update(
+        {
+          status: AccountStatus.EXPIRED,
+          claimTokenHash: Not(IsNull()),
+        },
+        { claimTokenHash: null },
+      );
+      if (result.affected && result.affected > 0) {
+        this.logger.log(
+          `Invalidated claim tokens on ${result.affected} expired account(s)`,
+        );
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Expired claim cleanup failed: ${msg}`);
+    }
   }
 
   /**
@@ -170,9 +285,6 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       accounts.map((account) => this.markInitializingFailed(account)),
     );
 
-    // Operational alert (issue #463): surfaces stuck-INITIALIZING accounts at
-    // error level so monitoring can react if the cleanup persistently finds
-    // orphaned off-chain accounts (a sign of an upstream creation problem).
     this.logger.error(
       `ALERT: ${accounts.length} account(s) stuck in INITIALIZING past the ` +
         `timeout were marked FAILED (initialization_timeout). If this count is ` +
@@ -182,7 +294,6 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
 
   private async markInitializingFailed(account: Account): Promise<void> {
     try {
-      // Explicit typed variable avoids TypeORM _QueryDeepPartialEntity inference on jsonb spread
       const metadata: Record<string, any> = {
         ...(account.metadata ?? {}),
         failureReason: 'initialization_timeout',

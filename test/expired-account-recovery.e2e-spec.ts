@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 
 /**
- * Integration test: expired-account recovery sweep flow (issue #524)
+ * Integration test: expire-then-recover sequence (issues #477 / #487)
  *
  * Full end-to-end execution requires a running local Stellar sandbox
  * (STELLAR_LOCAL_SANDBOX=true) with bridgelet-core contracts deployed.
@@ -22,8 +22,8 @@ const SANDBOX_ENABLED =
       // Steps:
       // 1. POST /accounts with expiresIn = 10
       // 2. Wait > 10s
-      // 3. Trigger expiry sweep via scheduler or direct service call
-      // 4. Assert account.status === EXPIRED
+      // 3. Trigger SchedulerService.runExpiryJob()
+      // 4. Assert account.status === EXPIRED && claimTokenHash === null
       // 5. Assert RECOVERY_ACCOUNT_PUBLIC balance increased by funded amount
       expect(true).toBe(true); // placeholder — replace with real assertions
     }, 120_000);

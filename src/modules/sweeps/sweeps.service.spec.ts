@@ -12,6 +12,7 @@ import { SweepMetricsProvider } from './providers/sweep-metrics.provider.js';
 import { SweepRetryQueueService } from './sweep-retry-queue.service.js';
 import { Account } from '../accounts/entities/account.entity.js';
 import { Claim } from '../claims/entities/claim.entity.js';
+import { SweepKind } from './enums/sweep-kind.enum.js';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -91,7 +92,9 @@ describe('SweepsService', () => {
 
   beforeEach(async () => {
     validationProvider = {
-      validateSweepParameters: jest.fn<any>().mockResolvedValue(undefined),
+      validateSweepParameters: jest.fn<any>().mockResolvedValue({
+        destinationAddress: validRequest.destinationAddress,
+      }),
       canSweep: jest.fn<any>().mockResolvedValue(true),
       getSweepStatus: jest.fn<any>().mockResolvedValue({ canSweep: true }),
     };
@@ -209,7 +212,9 @@ describe('SweepsService', () => {
       const order: string[] = [];
       validationProvider.validateSweepParameters.mockImplementation(() => {
         order.push('validate');
-        return Promise.resolve();
+        return Promise.resolve({
+          destinationAddress: validRequest.destinationAddress,
+        });
       });
       stellarService.executeSweep.mockImplementation(() => {
         order.push('contract');

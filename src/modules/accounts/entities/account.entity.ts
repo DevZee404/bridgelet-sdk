@@ -64,7 +64,7 @@ export class Account {
 
   @Column({ type: 'varchar', length: 64, nullable: true })
   @Index('IDX_accounts_claimTokenHash')
-  claimTokenHash: string;
+  claimTokenHash: string | null;
 
   @Column({ type: 'varchar', length: 56, nullable: true })
   destinationAddress: string;
