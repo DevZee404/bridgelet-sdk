@@ -42,12 +42,25 @@ import { RolesGuard } from './common/guards/roles.guard.js';
       useFactory: () => databaseConfig().database,
     }),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: parseInt(process.env.API_RATE_LIMIT || '100'),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          name: 'default',
+          ttl: 60000,
+          limit: parseInt(process.env.API_RATE_LIMIT || '100'),
+        },
+      ],
+      // Track limits per API key AND per IP simultaneously so that neither a
+      // single caller rotating keys nor a shared IP exhausting a per-key budget
+      // can circumvent the limit. See issues #473 and #474 (aggressive,
+      // per-API-key + per-IP rate limiting on fund-moving claim endpoints).
+      getTracker: (req) => {
+        const ip =
+          req.ip ?? req.socket?.remoteAddress ?? req.connection?.remoteAddress;
+        const apiKey = req.headers?.['x-api-key'];
+        return Promise.resolve([String(apiKey ?? 'no-api-key'), ip].join('|'));
       },
-    ]),
+    }),
     AccountsModule,
     ClaimsModule,
     SweepsModule,

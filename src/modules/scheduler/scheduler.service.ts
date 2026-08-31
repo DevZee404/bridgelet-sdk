@@ -49,10 +49,11 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       () => void this.runExpiryJob(),
       expiryIntervalMs,
     );
-    this.initializingHandle = setInterval(
-      () => void this.runInitializingCleanup(),
-      initializingIntervalMs,
-    );
+    this.initializingHandle = setInterval(() => {
+      void this.runInitializingCleanup();
+      // Detect DB/on-chain drift on the same cadence (issue #475).
+      void this.runSweepReconciliation();
+    }, initializingIntervalMs);
 
     this.logger.log(`Expiry job started (interval: ${expiryIntervalMs}ms)`);
     this.logger.log(
@@ -312,6 +313,74 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(
         `Failed to mark account ${account.id} as FAILED: ${msg}`,
       );
+    }
+  }
+
+  /**
+   * Sweep reconciliation (issue #475).
+   *
+   * A successful redemption performs two writes that are not atomic with the
+   * on-chain sweep: (1) the account is set to CLAIMING, then (2) on success it
+   * is set to CLAIMED and a Claim row is written. If the process crashes or
+   * the Horizon payment lands without the DB being updated, the DB can drift
+   * from the on-chain state (account stuck in CLAIMING, or swept on-chain with
+   * no claim record).
+   *
+   * This job detects accounts stuck in CLAIMING beyond a timeout with no
+   * progress and transitions them to PARTIAL_SWEEP — the designated status for
+   * "inconsistent DB/chain" state. A claim token retry can then complete the
+   * sweep (the redemption provider treats PARTIAL_SWEEP entries as recoverable
+   * and re-submits the Horizon payment with skipContractAuth).
+   *
+   * Per-account failures are isolated so one bad row never blocks the rest.
+   */
+  async runSweepReconciliation(): Promise<void> {
+    const stalledClaimingMs = parseInt(
+      process.env.SWEEP_RECONCILIATION_TIMEOUT_MS ?? '600000',
+      10,
+    );
+    const cutoff = new Date(Date.now() - stalledClaimingMs);
+
+    let accounts: Account[];
+    try {
+      accounts = await this.accountsRepository.find({
+        where: {
+          status: AccountStatus.CLAIMING,
+          updatedAt: LessThan(cutoff),
+        },
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Sweep reconciliation DB query failed: ${msg}`);
+      return;
+    }
+
+    if (accounts.length === 0) return;
+
+    this.logger.debug(
+      `Sweep reconciliation: processing ${accounts.length} stalled CLAIMING account(s)`,
+    );
+
+    await Promise.allSettled(
+      accounts.map((account) => this.reconcileStalledClaim(account)),
+    );
+  }
+
+  private async reconcileStalledClaim(account: Account): Promise<void> {
+    try {
+      await this.accountsRepository.update(account.id, {
+        status: AccountStatus.PARTIAL_SWEEP,
+        destinationAddress: '',
+      });
+      this.logger.error(
+        `Sweep reconciliation: account ${account.id} stalled in CLAIMING ` +
+          `(updated ${account.updatedAt.toISOString()}) → PARTIAL_SWEEP. ` +
+          'DB and on-chain state may have drifted; a claim-token retry will ' +
+          're-attempt the Horizon payment.',
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to reconcile account ${account.id}: ${msg}`);
     }
   }
 }

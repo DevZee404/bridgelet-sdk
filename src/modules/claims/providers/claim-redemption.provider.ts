@@ -29,6 +29,17 @@ import { SweepKind } from '../../sweeps/enums/sweep-kind.enum.js';
 export class ClaimRedemptionProvider {
   private readonly logger = new Logger(ClaimRedemptionProvider.name);
 
+  /**
+   * Consecutive failed redemption attempts keyed by token hash. Tracks
+   * repeated failures for brute-force / enumeration scrutiny (issue #474).
+   * A successful attempt (or one never seen) has no entry. Keyed loosely:
+   * entries are evicted when the count is reset after a success.
+   */
+  private readonly failedAttempts = new Map<string, number>();
+
+  /** Number of consecutive failures that triggers a heightened alert log. */
+  private readonly failureAlertThreshold = 5;
+
   constructor(
     @InjectRepository(Claim)
     private claimsRepository: Repository<Claim>,
@@ -168,6 +179,7 @@ export class ClaimRedemptionProvider {
           'Claim record not found for already redeemed account',
         );
       }
+      this.resetFailureScrutiny(tokenHash);
       return {
         success: true,
         txHash: existingClaim.sweepTxHash,
@@ -285,6 +297,10 @@ export class ClaimRedemptionProvider {
         metadata: account.metadata,
       });
 
+      // Successful redemption clears any accumulated failure count for the
+      // token (issue #474).
+      this.resetFailureScrutiny(tokenHash);
+
       return {
         success: true,
         txHash: sweepResult.txHash,
@@ -321,6 +337,11 @@ export class ClaimRedemptionProvider {
         failureReason: typedError.message,
       });
 
+      // Brute-force / enumeration scrutiny (issue #474): track consecutive
+      // failures for the same token and raise an alert once the threshold is
+      // crossed.
+      this.recordFailureScrutiny(tokenHash, typedError.message);
+
       await this.webhooksService.triggerEvent('sweep.failed', {
         accountId: account.id,
         amount: account.amount,
@@ -336,5 +357,39 @@ export class ClaimRedemptionProvider {
 
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
+  }
+
+  /**
+   * Records a failed redemption attempt for brute-force scrutiny. When the
+   * same token hash fails more than {@link failureAlertThreshold} consecutive
+   * times a high-severity / alerting log line is emitted. Called on rejected
+   * token verification (expired/invalid) and on sweep/rollback failures.
+   *
+   * @returns the new consecutive-failure count.
+   */
+  private recordFailureScrutiny(tokenHash: string, reason: string): number {
+    const count = (this.failedAttempts.get(tokenHash) ?? 0) + 1;
+    this.failedAttempts.set(tokenHash, count);
+
+    this.logger.warn(
+      `Redemption failure ${count} for token hash ${tokenHash.slice(0, 8)}…: ${reason}`,
+    );
+
+    if (count >= this.failureAlertThreshold) {
+      // Alerting: exceeding the threshold for the same token strongly suggests
+      // a brute-force / enumeration attempt on that claim. Surface at ERROR
+      // level so operational alerting can pick it up.
+      this.logger.error(
+        `Brute-force alert: token hash ${tokenHash.slice(0, 8)}… failed ` +
+          `${count} consecutive redemption attempts (reason: ${reason}). ` +
+          'Aggressive rate limiting is in place on POST /claims/redeem; ' +
+          'consider manual review.',
+      );
+    }
+    return count;
+  }
+
+  private resetFailureScrutiny(tokenHash: string): void {
+    this.failedAttempts.delete(tokenHash);
   }
 }

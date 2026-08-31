@@ -37,7 +37,11 @@ export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 
   @Post()
-  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests/min per API key
+  // Claim tokens are generated here, so this endpoint is rate limited per
+  // API key AND per IP to prevent mass token generation / account-existence
+  // probing (issue #473). Exceeding the limit returns 429 with a Retry-After
+  // header. Tracking configured in ThrottlerModule getTracker.
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 requests/min per API key+IP
   @ApiOperation({
     summary: 'Create ephemeral escrow account',
     description:
