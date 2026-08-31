@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Counter } from 'prom-client';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
 
 /**
  * Represents a sweep attempt that failed and may be retried.
@@ -23,6 +25,30 @@ export interface SweepRetryEntry {
 }
 
 /**
+ * Represents a sweep that has exhausted all retries and been moved to the dead-letter queue.
+ */
+export interface DeadLetterSweepEntry {
+  /** Unique identifier for the dead-letter entry. */
+  id: string;
+  /** Original sweep ID from the retry queue. */
+  originalSweepId: string;
+  /** Account ID being swept. */
+  accountId: string;
+  /** Total number of attempts made before moving to DLQ. */
+  totalAttempts: number;
+  /** Timestamp (ms) when the sweep was moved to the dead-letter queue. */
+  movedToDlqAt: number;
+  /** The last error message that caused the final failure. */
+  lastError: string;
+  /** Whether this dead-letter entry has been resolved manually. */
+  resolved: boolean;
+  /** Timestamp (ms) when this entry was resolved (if applicable). */
+  resolvedAt?: number;
+  /** Notes added by the operator during resolution (if applicable). */
+  resolutionNotes?: string;
+}
+
+/**
  * In-memory retry queue for failed sweep executions.
  *
  * Implements exponential backoff: delays double on each retry up to a maximum
@@ -39,11 +65,21 @@ export class SweepRetryQueueService {
   /** Map of sweep ID → retry entry. */
   private readonly queue = new Map<string, SweepRetryEntry>();
 
+  /** Dead-letter queue (DLQ) for sweeps that have exhausted all retries. */
+  private readonly deadLetterQueue = new Map<string, DeadLetterSweepEntry>();
+
   /** Interval ID for the periodic drain timer. */
   private drainTimer: ReturnType<typeof setInterval> | null = null;
 
   /** Callback invoked when a retry is ready. */
   private onRetry: ((entry: SweepRetryEntry) => Promise<void>) | null = null;
+
+  constructor(
+    @InjectMetric('sweep_deadletter_total')
+    private readonly deadletterCounter: Counter<string>,
+    @InjectMetric('sweep_deadletter_resolved_total')
+    private readonly resolvedDeadletterCounter: Counter<string>,
+  ) {}
 
   /** Base delay in milliseconds (doubles on each retry). */
   private static readonly BASE_DELAY_MS = 2_000;
@@ -155,10 +191,9 @@ export class SweepRetryQueueService {
     entry.lastError = error ?? entry.lastError;
 
     if (entry.attempts >= entry.maxAttempts) {
-      entry.terminal = true;
-      this.logger.warn(
-        `Sweep for ${entry.accountId} exhausted ${entry.maxAttempts} retries — marking terminal`,
-      );
+      // Move to dead-letter queue instead of keeping in main queue
+      this.moveToDeadLetterQueue(entry, error ?? entry.lastError);
+      this.queue.delete(entry.id);
       return;
     }
 
@@ -191,6 +226,88 @@ export class SweepRetryQueueService {
   /** Clear the entire queue. */
   clear(): void {
     this.queue.clear();
+  }
+
+  /**
+   * Move a sweep entry to the dead-letter queue.
+   * This is called when all retries have been exhausted.
+   */
+  private moveToDeadLetterQueue(entry: SweepRetryEntry, lastError: string): void {
+    const dlqId = `dlq-${entry.accountId}-${Date.now()}`;
+    const now = Date.now();
+    
+    const dlqEntry: DeadLetterSweepEntry = {
+      id: dlqId,
+      originalSweepId: entry.id,
+      accountId: entry.accountId,
+      totalAttempts: entry.attempts,
+      movedToDlqAt: now,
+      lastError,
+      resolved: false,
+    };
+
+    this.deadLetterQueue.set(dlqId, dlqEntry);
+    this.deadletterCounter.inc({ account_id: entry.accountId });
+    
+    // ALERT: Critical error that requires human intervention
+    this.logger.error(
+      `ALERT: Sweep for account ${entry.accountId} has been moved to the dead-letter queue after exhausting all ${entry.maxAttempts} retries. ` +
+      `Last error: ${lastError}. DLQ entry ID: ${dlqId}. This requires immediate operator attention to prevent stuck funds.`,
+    );
+  }
+
+  /**
+   * Get all entries in the dead-letter queue.
+   * If includeResolved is false, only returns unresolved entries.
+   */
+  getDeadLetterEntries(includeResolved = false): DeadLetterSweepEntry[] {
+    const entries = Array.from(this.deadLetterQueue.values());
+    return includeResolved ? entries : entries.filter(e => !e.resolved);
+  }
+
+  /**
+   * Get a specific dead-letter entry by ID.
+   */
+  getDeadLetterEntryById(id: string): DeadLetterSweepEntry | undefined {
+    return this.deadLetterQueue.get(id);
+  }
+
+  /**
+   * Get all dead-letter entries for a specific account ID.
+   */
+  getDeadLetterEntriesForAccount(accountId: string, includeResolved = false): DeadLetterSweepEntry[] {
+    const entries = this.getDeadLetterEntries(includeResolved);
+    return entries.filter(e => e.accountId === accountId);
+  }
+
+  /**
+   * Mark a dead-letter entry as resolved.
+   * This should be called after an operator has manually resolved the issue.
+   */
+  resolveDeadLetterEntry(id: string, resolutionNotes?: string): boolean {
+    const entry = this.deadLetterQueue.get(id);
+    if (!entry || entry.resolved) {
+      return false;
+    }
+
+    entry.resolved = true;
+    entry.resolvedAt = Date.now();
+    if (resolutionNotes) {
+      entry.resolutionNotes = resolutionNotes;
+    }
+
+    this.resolvedDeadletterCounter.inc({ account_id: entry.accountId });
+    this.logger.log(
+      `Dead-letter entry ${id} for account ${entry.accountId} has been marked as resolved. Resolution notes: ${resolutionNotes ?? 'None provided'}`,
+    );
+    return true;
+  }
+
+  /**
+   * Get the current size of the dead-letter queue (unresolved entries only).
+   */
+  get deadLetterCount(): number {
+    return this.getDeadLetterEntries(false).length;
   }
 
   /** Check if an error message is terminal. */

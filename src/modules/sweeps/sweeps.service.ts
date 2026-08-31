@@ -288,6 +288,36 @@ export class SweepsService {
   }
 
   /**
+   * Get all unresolved dead-lettered sweeps.
+   * These are sweeps that have exhausted all retries and require manual intervention.
+   */
+  public getDeadLetterSweeps(includeResolved = false) {
+    return this.retryQueue.getDeadLetterEntries(includeResolved);
+  }
+
+  /**
+   * Get a specific dead-letter entry by ID.
+   */
+  public getDeadLetterSweepById(id: string) {
+    return this.retryQueue.getDeadLetterEntryById(id);
+  }
+
+  /**
+   * Get all dead-letter entries for a specific account ID.
+   */
+  public getDeadLetterSweepsForAccount(accountId: string, includeResolved = false) {
+    return this.retryQueue.getDeadLetterEntriesForAccount(accountId, includeResolved);
+  }
+
+  /**
+   * Mark a dead-lettered sweep as resolved.
+   * This should only be called by an operator after manually resolving the issue.
+   */
+  public resolveDeadLetterSweep(id: string, resolutionNotes?: string): boolean {
+    return this.retryQueue.resolveDeadLetterEntry(id, resolutionNotes);
+  }
+
+  /**
    * Get detailed sweep status for an account by its UUID.
    * Returns transaction hash, confirmation status, and error details
    * suitable for the admin dashboard and sender notifications.
