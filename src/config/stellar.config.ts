@@ -44,5 +44,9 @@ export default registerAs('stellar', () => {
     sweepControllerContractId:
       process.env.STELLAR_SWEEP_CONTROLLER_CONTRACT_ID ||
       process.env.SWEEP_CONTROLLER_CONTRACT_ID,
+    // Fee strategy configuration
+    maxFeeCeiling: parseInt(process.env.STELLAR_MAX_FEE_CEILING || '1000000', 10), // 10 XLM in stroops
+    feeCacheTtlMs: parseInt(process.env.STELLAR_FEE_CACHE_TTL_MS || '60000', 10), // 60 seconds
+    feeMultiplier: parseFloat(process.env.STELLAR_FEE_MULTIPLIER || '1.0'),
   };
 });
