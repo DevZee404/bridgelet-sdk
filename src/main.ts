@@ -1,6 +1,7 @@
 import './tracing.js';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { SanitizeInputPipe } from './common/utils/input-sanitize.pipe.js';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module.js';
@@ -99,7 +100,11 @@ async function bootstrap() {
 
   app.use(helmet());
 
+  // Sanitise input first (strip injection vectors), then validate shape.
+  // Order matters: SanitizeInputPipe runs on the raw body before
+  // ValidationPipe applies class-validator decorators.
   app.useGlobalPipes(
+    new SanitizeInputPipe(),
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
