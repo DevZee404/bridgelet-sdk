@@ -1,7 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
 import {
   FindManyOptions,
   LessThan,
@@ -51,13 +50,10 @@ export class WebhooksService {
   }
 
   async create(dto: CreateWebhookDto): Promise<WebhookResponseDto> {
-    // Generate a cryptographically secure 32-byte secret if not provided
-    const secret = dto.secret ?? crypto.randomBytes(32).toString('hex');
-    
     const webhook = this.webhookRepository.create({
       url: dto.url,
       events: dto.events,
-      secret,
+      secret: dto.secret ?? null,
       description: dto.description ?? null,
       isActive: true,
     });
@@ -310,8 +306,7 @@ export class WebhooksService {
 
     if (webhooks.length === 0) return;
 
-    // Fire and forget - run deliveries in background to avoid blocking caller
-    Promise.allSettled(
+    await Promise.allSettled(
       webhooks.map((webhook) =>
         this.deliveryProvider.deliver(
           webhook,
@@ -321,10 +316,7 @@ export class WebhooksService {
           this.requestTimeoutMs,
         ),
       ),
-    ).catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Unexpected error in background webhook delivery: ${msg}`);
-    });
+    );
   }
 
   private toResponseDto(webhook: Webhook): WebhookResponseDto {
@@ -335,9 +327,6 @@ export class WebhooksService {
       isActive: webhook.isActive,
       description: webhook.description,
       lastTriggeredAt: webhook.lastTriggeredAt,
-      hasFailedDeliveries: webhook.hasFailedDeliveries,
-      consecutiveFailures: webhook.consecutiveFailures,
-      lastFailedAt: webhook.lastFailedAt,
       createdAt: webhook.createdAt,
     };
   }

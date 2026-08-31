@@ -1,5 +1,6 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -54,7 +55,7 @@ import { RolesGuard } from './common/guards/roles.guard.js';
       // single caller rotating keys nor a shared IP exhausting a per-key budget
       // can circumvent the limit. See issues #473 and #474 (aggressive,
       // per-API-key + per-IP rate limiting on fund-moving claim endpoints).
-      getTracker: (req) => {
+      getTracker: (req: Request) => {
         const ip =
           req.ip ?? req.socket?.remoteAddress ?? req.connection?.remoteAddress;
         const apiKey = req.headers?.['x-api-key'];

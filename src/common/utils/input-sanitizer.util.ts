@@ -18,6 +18,7 @@ import { BadRequestException } from '@nestjs/common';
  *   \x0D  CR   – legitimate multi-line text (stripped separately by
  *                `stripCrlf` when header / log-injection is the concern)
  */
+// eslint-disable-next-line no-control-regex -- intentionally matches C0/C1 control characters
 const DEFAULT_CONTROL_CHAR_REGEX = /[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F-\x9F]/g;
 
 /** Always stripped regardless of options – CRLF sequences that enable
@@ -178,8 +179,12 @@ export function sanitizeWebhookUrl(url: unknown): string {
  */
 export function sanitizeFreeText(input: unknown): string | undefined {
   if (input == null) return undefined;
-  if (typeof input !== 'string') return String(input);
-  return stripControlChars(input) as string;
+  if (typeof input === 'object' || typeof input === 'function')
+    return undefined;
+  if (typeof input === 'string') return stripControlChars(input) as string;
+  return typeof input === 'number' || typeof input === 'boolean'
+    ? String(input)
+    : undefined;
 }
 
 // ---------------------------------------------------------------------------

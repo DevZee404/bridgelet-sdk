@@ -169,8 +169,8 @@ export class TransactionProvider {
         sourceKeypair.publicKey(),
       );
 
-      // Fetch dynamic fee (p75 from fee_stats, 60s cache, fallback to BASE_FEE)
-      const fee = await this.fetchDynamicFee();
+      // Fetch dynamic fee using shared fee strategy
+      const { fee } = await this.feeStrategy.calculateFee();
 
       // Build account merge transaction
       const transaction = new TransactionBuilder(sourceAccount, {

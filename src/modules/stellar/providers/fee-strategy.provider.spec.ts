@@ -29,7 +29,8 @@ describe('FeeStrategyProvider', () => {
           provide: ConfigService,
           useValue: {
             getOrThrow: jest.fn((key: string) => {
-              if (key === 'stellar.horizonUrl') return 'https://horizon-testnet.stellar.org';
+              if (key === 'stellar.horizonUrl')
+                return 'https://horizon-testnet.stellar.org';
               if (key === 'stellar.network') return 'testnet';
               return null;
             }),
@@ -41,7 +42,7 @@ describe('FeeStrategyProvider', () => {
 
     feeStrategy = module.get<FeeStrategyProvider>(FeeStrategyProvider);
     configService = module.get<ConfigService>(ConfigService);
-    
+
     // Get the mock Horizon server instance
     mockHorizonServer = (feeStrategy as any).server;
   });
@@ -64,7 +65,7 @@ describe('FeeStrategyProvider', () => {
   it('should return base fee when fee stats fetch fails', async () => {
     // Mock feeStats to throw an error
     mockHorizonServer.feeStats.mockRejectedValue(new Error('Network error'));
-    
+
     const result = await feeStrategy.calculateFee();
     expect(result.fee).toBe(String(BASE_FEE));
     expect(result.isDynamic).toBe(false);
@@ -76,7 +77,7 @@ describe('FeeStrategyProvider', () => {
     mockHorizonServer.feeStats.mockResolvedValue({
       fee_charged: { p75: 'invalid' },
     });
-    
+
     const result = await feeStrategy.calculateFee();
     expect(result.fee).toBe(String(BASE_FEE));
     expect(result.isDynamic).toBe(false);
@@ -88,7 +89,7 @@ describe('FeeStrategyProvider', () => {
     mockHorizonServer.feeStats.mockResolvedValue({
       fee_charged: { p75: '100' },
     });
-    
+
     const result = await feeStrategy.calculateFee();
     expect(result.fee).toBe('100');
     expect(result.isDynamic).toBe(true);
@@ -98,11 +99,11 @@ describe('FeeStrategyProvider', () => {
   it('should apply fee multiplier correctly', async () => {
     // Set a custom multiplier
     feeStrategy.updateConfig({ feeMultiplier: 2.0 });
-    
+
     mockHorizonServer.feeStats.mockResolvedValue({
       fee_charged: { p75: '100' },
     });
-    
+
     const result = await feeStrategy.calculateFee();
     expect(result.fee).toBe('200'); // 100 * 2
     expect(result.isDynamic).toBe(true);
@@ -111,16 +112,16 @@ describe('FeeStrategyProvider', () => {
 
   it('should cap fee at max fee ceiling during high congestion', async () => {
     // Set a lower max ceiling for testing
-    feeStrategy.updateConfig({ 
+    feeStrategy.updateConfig({
       maxFeeCeiling: 500,
       feeMultiplier: 10.0,
     });
-    
+
     // High congestion scenario: p75 is 100, multiplier 10x would be 1000, but capped at 500
     mockHorizonServer.feeStats.mockResolvedValue({
       fee_charged: { p75: '100' },
     });
-    
+
     const result = await feeStrategy.calculateFee();
     expect(result.fee).toBe('500');
     expect(result.isDynamic).toBe(true);
@@ -131,11 +132,11 @@ describe('FeeStrategyProvider', () => {
     mockHorizonServer.feeStats.mockResolvedValue({
       fee_charged: { p75: '100' },
     });
-    
+
     // First call
     const firstResult = await feeStrategy.calculateFee();
     expect(firstResult.fee).toBe('100');
-    
+
     // Second call should use cache, feeStats should only be called once
     const secondResult = await feeStrategy.calculateFee();
     expect(secondResult.fee).toBe('100');
@@ -143,19 +144,21 @@ describe('FeeStrategyProvider', () => {
   });
 
   it('should invalidate cache and fetch fresh fee after cache invalidation', async () => {
-    mockHorizonServer.feeStats.mockResolvedValueOnce({
-      fee_charged: { p75: '100' },
-    }).mockResolvedValueOnce({
-      fee_charged: { p75: '200' }, // Fee increased in second fetch
-    });
-    
+    mockHorizonServer.feeStats
+      .mockResolvedValueOnce({
+        fee_charged: { p75: '100' },
+      })
+      .mockResolvedValueOnce({
+        fee_charged: { p75: '200' }, // Fee increased in second fetch
+      });
+
     // First call
     const firstResult = await feeStrategy.calculateFee();
     expect(firstResult.fee).toBe('100');
-    
+
     // Invalidate cache
     feeStrategy.invalidateFeeCache();
-    
+
     // Second call should fetch fresh value
     const secondResult = await feeStrategy.calculateFee();
     expect(secondResult.fee).toBe('200');
@@ -163,19 +166,21 @@ describe('FeeStrategyProvider', () => {
   });
 
   it('should update configuration and invalidate cache', async () => {
-    mockHorizonServer.feeStats.mockResolvedValueOnce({
-      fee_charged: { p75: '100' },
-    }).mockResolvedValueOnce({
-      fee_charged: { p75: '100' },
-    });
-    
+    mockHorizonServer.feeStats
+      .mockResolvedValueOnce({
+        fee_charged: { p75: '100' },
+      })
+      .mockResolvedValueOnce({
+        fee_charged: { p75: '100' },
+      });
+
     // First calculation with default multiplier
     const firstResult = await feeStrategy.calculateFee();
     expect(firstResult.fee).toBe('100');
-    
+
     // Update configuration
     feeStrategy.updateConfig({ feeMultiplier: 3.0 });
-    
+
     // Second calculation should use new multiplier
     const secondResult = await feeStrategy.calculateFee();
     expect(secondResult.fee).toBe('300'); // 100 * 3

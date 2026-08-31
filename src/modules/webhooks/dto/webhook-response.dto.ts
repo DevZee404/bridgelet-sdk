@@ -20,14 +20,5 @@ export class WebhookResponseDto {
   lastTriggeredAt: Date | null;
 
   @ApiProperty()
-  hasFailedDeliveries: boolean;
-
-  @ApiProperty()
-  consecutiveFailures: number;
-
-  @ApiProperty({ nullable: true })
-  lastFailedAt: Date | null;
-
-  @ApiProperty()
   createdAt: Date;
 }

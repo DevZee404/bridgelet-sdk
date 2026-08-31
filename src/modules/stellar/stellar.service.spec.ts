@@ -9,6 +9,7 @@ import {
   SOROBAN_RPC_MAX_RETRIES,
   SOROBAN_RPC_INITIAL_BACKOFF_MS,
 } from './stellar.service.js';
+import { FeeStrategyProvider } from './providers/fee-strategy.provider.js';
 import { getToken } from '@willsoto/nestjs-prometheus';
 
 const mockConfigService = {
@@ -66,6 +67,13 @@ const DEST_KEY = FUNDING_KEYPAIR.publicKey();
 // Valid Soroban contract address (56 chars, C-prefix strkey)
 const CONTRACT_ID = 'CASJFOEQG3WN42CR37EKINFO77PP7UO2DT5XCNHITYT7WUHL7X3RYQFF';
 
+const feeStrategyMock = {
+  calculateFee: jest.fn().mockResolvedValue({
+    fee: String(StellarSdk.BASE_FEE),
+    source: 'base_fee',
+  }),
+};
+
 describe('StellarService', () => {
   let service: StellarService;
   let horizonServer: ReturnType<typeof makeLedgerServer>;
@@ -81,6 +89,7 @@ describe('StellarService', () => {
       providers: [
         StellarService,
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: FeeStrategyProvider, useValue: feeStrategyMock },
         {
           provide: getToken('soroban_rpc_latency_seconds'),
           useValue: { startTimer: jest.fn(() => jest.fn()) },
@@ -654,6 +663,7 @@ describe('StellarService', () => {
               },
             },
           },
+          { provide: FeeStrategyProvider, useValue: feeStrategyMock },
           {
             provide: getToken('soroban_rpc_latency_seconds'),
             useValue: { startTimer: jest.fn(() => jest.fn()) },

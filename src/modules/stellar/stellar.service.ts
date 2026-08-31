@@ -168,7 +168,7 @@ export class StellarService {
   async getAccountBalance(accountId: string): Promise<string> {
     const account = await this.getActiveHorizonServer().loadAccount(accountId);
     const nativeBalance = account.balances.find(
-      (b: any) => b.asset_type === 'native',
+      (b) => b.asset_type === 'native',
     );
     return nativeBalance ? nativeBalance.balance : '0';
   }

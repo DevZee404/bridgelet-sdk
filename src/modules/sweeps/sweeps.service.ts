@@ -305,8 +305,14 @@ export class SweepsService {
   /**
    * Get all dead-letter entries for a specific account ID.
    */
-  public getDeadLetterSweepsForAccount(accountId: string, includeResolved = false) {
-    return this.retryQueue.getDeadLetterEntriesForAccount(accountId, includeResolved);
+  public getDeadLetterSweepsForAccount(
+    accountId: string,
+    includeResolved = false,
+  ) {
+    return this.retryQueue.getDeadLetterEntriesForAccount(
+      accountId,
+      includeResolved,
+    );
   }
 
   /**

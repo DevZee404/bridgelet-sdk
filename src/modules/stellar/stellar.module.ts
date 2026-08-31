@@ -7,7 +7,10 @@ import { FundingAccountMonitorService } from './funding-account-monitor.service.
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Account } from '../accounts/entities/account.entity.js';
 import { ContractEvent } from './entities/contract-event.entity.js';
-import { makeHistogramProvider, makeGaugeProvider } from '@willsoto/nestjs-prometheus';
+import {
+  makeHistogramProvider,
+  makeGaugeProvider,
+} from '@willsoto/nestjs-prometheus';
 
 const sorobanRpcLatencyHistogram = makeHistogramProvider({
   name: 'soroban_rpc_latency_seconds',

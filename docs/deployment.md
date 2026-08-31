@@ -68,11 +68,11 @@ This is an **operational requirement**, not an optional enhancement.
 
 ### Configuration
 
-| Environment Variable | Default | Description |
-|---|---|---|
-| `FUNDING_ACCOUNT_BALANCE_CHECK_INTERVAL_MS` | `300000` (5 min) | How often the service polls Horizon for the funding account balance. |
-| `FUNDING_ACCOUNT_LOW_BALANCE_THRESHOLD` | `50000000` (5 XLM) | Stroop threshold that triggers a `WARN` log. |
-| `FUNDING_ACCOUNT_CRITICAL_BALANCE_THRESHOLD` | `20000000` (2 XLM) | Stroop threshold that triggers an `ERROR` log. |
+| Environment Variable                         | Default            | Description                                                          |
+| -------------------------------------------- | ------------------ | -------------------------------------------------------------------- |
+| `FUNDING_ACCOUNT_BALANCE_CHECK_INTERVAL_MS`  | `300000` (5 min)   | How often the service polls Horizon for the funding account balance. |
+| `FUNDING_ACCOUNT_LOW_BALANCE_THRESHOLD`      | `50000000` (5 XLM) | Stroop threshold that triggers a `WARN` log.                         |
+| `FUNDING_ACCOUNT_CRITICAL_BALANCE_THRESHOLD` | `20000000` (2 XLM) | Stroop threshold that triggers an `ERROR` log.                       |
 
 Stroops are the smallest Stellar unit: **1 XLM = 10,000,000 stroops**.
 

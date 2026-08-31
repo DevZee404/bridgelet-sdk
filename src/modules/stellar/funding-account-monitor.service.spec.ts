@@ -46,7 +46,7 @@ describe('FundingAccountMonitorService', () => {
 
     mockGauge = {
       set: jest.fn(),
-    } as unknown as jest.Mocked<Gauge<string>>;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -77,7 +77,7 @@ describe('FundingAccountMonitorService', () => {
       await service['checkBalance']();
 
       expect(mockStellarService.getAccountBalance).toHaveBeenCalledWith(
-        'GCOCOEM6N6JNB5MAPWFRMMTMSUZW6RZ4KPKOMYUFXJKCUQUNVWDCJK2K',
+        'GDWTSHU3BQ4XGRRTGBOLW7KWOPPFSMZTF5UK3TKSO7MDDYGYGRQNCHFO',
       );
       expect(mockGauge.set).toHaveBeenCalledWith(10 * STROOPS_PER_XLM);
     });
@@ -119,9 +119,7 @@ describe('FundingAccountMonitorService', () => {
 
       await service['checkBalance']();
 
-      expect(logSpy).toHaveBeenCalledWith(
-        expect.stringContaining('balance:'),
-      );
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('balance:'));
     });
 
     it('logs error and does not crash on StellarService failure', async () => {
@@ -148,10 +146,11 @@ describe('FundingAccountMonitorService', () => {
           return 1 as unknown as NodeJS.Timeout;
         });
 
-      await service.onModuleInit();
+      service.onModuleInit();
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(mockStellarService.getAccountBalance).toHaveBeenCalledTimes(1);
-      expect(mockGauge.set).toHaveBeenCalledTimes(1);
+      expect(mockStellarService.getAccountBalance).toHaveBeenCalledTimes(2);
+      expect(mockGauge.set).toHaveBeenCalledTimes(2);
 
       setIntervalSpy.mockRestore();
     });
@@ -161,7 +160,7 @@ describe('FundingAccountMonitorService', () => {
     it('clears the interval', async () => {
       const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
 
-      await service.onModuleInit();
+      service.onModuleInit();
       service.onModuleDestroy();
 
       expect(clearIntervalSpy).toHaveBeenCalledTimes(1);

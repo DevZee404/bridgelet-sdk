@@ -210,7 +210,4 @@ export class SecretEncryptionUtil {
 }
 
 export type SecretFormat =
-  | 'prefixed-aes-v1'
-  | 'unprefixed-aes'
-  | 'legacy-base64'
-  | 'corrupt';
+  'prefixed-aes-v1' | 'unprefixed-aes' | 'legacy-base64' | 'corrupt';

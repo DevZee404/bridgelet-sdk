@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { StellarService } from './stellar.service.js';
@@ -6,7 +11,7 @@ import { InjectMetric } from '@willsoto/nestjs-prometheus';
 import { Gauge } from 'prom-client';
 import { LogSanitizer } from '../../common/utils/log-sanitizer.util.js';
 
-const STROOPS_PER_XLM = 10_000_000;
+export const STROOPS_PER_XLM = 10_000_000;
 
 @Injectable()
 export class FundingAccountMonitorService
@@ -66,12 +71,14 @@ export class FundingAccountMonitorService
 
       this.fundingAccountBalance.set(balanceStroops);
 
-      const lowThreshold = this.configService.get<number>(
-        'stellar.fundingAccountLowBalanceThreshold',
-      );
-      const criticalThreshold = this.configService.get<number>(
-        'stellar.fundingAccountCriticalBalanceThreshold',
-      );
+      const lowThreshold =
+        this.configService.get<number>(
+          'stellar.fundingAccountLowBalanceThreshold',
+        ) ?? 5_000_000;
+      const criticalThreshold =
+        this.configService.get<number>(
+          'stellar.fundingAccountCriticalBalanceThreshold',
+        ) ?? 1_000_000;
 
       const redacted = LogSanitizer.redactAddress(publicKey);
 

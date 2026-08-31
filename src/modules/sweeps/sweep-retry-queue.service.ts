@@ -27,7 +27,7 @@ export interface SweepRetryEntry {
 /**
  * Represents a sweep that has exhausted all retries and been moved to the dead-letter queue.
  */
-export interface DeadLetterSweepEntry {
+export class DeadLetterSweepEntry {
   /** Unique identifier for the dead-letter entry. */
   id: string;
   /** Original sweep ID from the retry queue. */
@@ -232,10 +232,13 @@ export class SweepRetryQueueService {
    * Move a sweep entry to the dead-letter queue.
    * This is called when all retries have been exhausted.
    */
-  private moveToDeadLetterQueue(entry: SweepRetryEntry, lastError: string): void {
+  private moveToDeadLetterQueue(
+    entry: SweepRetryEntry,
+    lastError: string,
+  ): void {
     const dlqId = `dlq-${entry.accountId}-${Date.now()}`;
     const now = Date.now();
-    
+
     const dlqEntry: DeadLetterSweepEntry = {
       id: dlqId,
       originalSweepId: entry.id,
@@ -248,11 +251,11 @@ export class SweepRetryQueueService {
 
     this.deadLetterQueue.set(dlqId, dlqEntry);
     this.deadletterCounter.inc({ account_id: entry.accountId });
-    
+
     // ALERT: Critical error that requires human intervention
     this.logger.error(
       `ALERT: Sweep for account ${entry.accountId} has been moved to the dead-letter queue after exhausting all ${entry.maxAttempts} retries. ` +
-      `Last error: ${lastError}. DLQ entry ID: ${dlqId}. This requires immediate operator attention to prevent stuck funds.`,
+        `Last error: ${lastError}. DLQ entry ID: ${dlqId}. This requires immediate operator attention to prevent stuck funds.`,
     );
   }
 
@@ -262,7 +265,7 @@ export class SweepRetryQueueService {
    */
   getDeadLetterEntries(includeResolved = false): DeadLetterSweepEntry[] {
     const entries = Array.from(this.deadLetterQueue.values());
-    return includeResolved ? entries : entries.filter(e => !e.resolved);
+    return includeResolved ? entries : entries.filter((e) => !e.resolved);
   }
 
   /**
@@ -275,9 +278,12 @@ export class SweepRetryQueueService {
   /**
    * Get all dead-letter entries for a specific account ID.
    */
-  getDeadLetterEntriesForAccount(accountId: string, includeResolved = false): DeadLetterSweepEntry[] {
+  getDeadLetterEntriesForAccount(
+    accountId: string,
+    includeResolved = false,
+  ): DeadLetterSweepEntry[] {
     const entries = this.getDeadLetterEntries(includeResolved);
-    return entries.filter(e => e.accountId === accountId);
+    return entries.filter((e) => e.accountId === accountId);
   }
 
   /**
