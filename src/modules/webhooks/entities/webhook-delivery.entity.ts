@@ -52,6 +52,16 @@ export class WebhookDelivery {
   @Column({ name: 'delivered_at', type: 'timestamp', nullable: true })
   deliveredAt: Date | null;
 
+  @Column({ name: 'attempts', type: 'jsonb', default: [] })
+  attempts: Array<{
+    attemptNumber: number;
+    timestamp: Date;
+    responseCode?: number;
+    responseBody?: string;
+    error?: string;
+    durationMs: number;
+  }>;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;
 }

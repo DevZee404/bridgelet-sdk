@@ -21,6 +21,20 @@ import { WEBHOOK_PAYLOAD_SCHEMA_VERSION } from '../webhook-schema-version.js';
 @Injectable()
 export class WebhookDeliveryProvider {
   private readonly logger = new Logger(WebhookDeliveryProvider.name);
+  
+  // Exponential backoff configuration - standard for webhooks:
+  // 1min, 5min, 30min, 2h, 5h, 24h (max 6 retries, total ~30h of retries)
+  private readonly defaultBackoffIntervalsMs = [
+    60 * 1000,          // 1 minute
+    5 * 60 * 1000,      // 5 minutes
+    30 * 60 * 1000,     // 30 minutes
+    2 * 60 * 60 * 1000, // 2 hours
+    5 * 60 * 60 * 1000, // 5 hours
+    24 * 60 * 60 * 1000 // 24 hours
+  ];
+
+  // Threshold to flag a subscription as having sustained failures
+  private readonly consecutiveFailureThreshold = 5;
 
   constructor(
     @InjectRepository(Webhook)
@@ -33,7 +47,7 @@ export class WebhookDeliveryProvider {
     webhook: Webhook,
     eventType: string,
     payload: Record<string, unknown>,
-    maxRetries = 3,
+    maxRetries = 5,
     timeoutMs = 10_000,
   ): Promise<void> {
     const deliveryId = crypto.randomUUID();
@@ -52,6 +66,7 @@ export class WebhookDeliveryProvider {
       subscriptionId: webhook.id,
       eventType,
       payloadHash,
+      attempts: [],
     });
 
     const signature = this.computeSignature(body, webhook.secret);
@@ -65,12 +80,21 @@ export class WebhookDeliveryProvider {
     let lastResponseCode: number | null = null;
     let lastResponseBody: string | null = null;
 
+    // Save initial delivery record
+    await this.deliveryRepository.save(delivery);
+
     while (attemptCount < maxRetries && !success) {
       attemptCount++;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const startTime = Date.now();
 
       try {
+        this.logger.log(
+          `Attempting webhook delivery (attempt ${attemptCount}/${maxRetries}): ` +
+          `event=${eventType}, accountId=${accountId}, url=${webhook.url}`
+        );
+
         const response = await fetch(webhook.url, {
           method: 'POST',
           headers: {
@@ -86,9 +110,29 @@ export class WebhookDeliveryProvider {
         lastResponseCode = response.status;
         const text = await response.text();
         lastResponseBody = text ? text.substring(0, 2048) : null;
+        const durationMs = Date.now() - startTime;
+
+        // Record this detailed attempt for debugging
+        delivery.attempts.push({
+          attemptNumber: attemptCount,
+          timestamp: new Date(),
+          responseCode: lastResponseCode,
+          responseBody: lastResponseBody,
+          durationMs,
+        });
 
         if (response.ok) {
           success = true;
+          this.logger.log(
+            `Webhook delivery succeeded (attempt ${attemptCount}/${maxRetries}): ` +
+            `event=${eventType}, accountId=${accountId}, url=${webhook.url}`
+          );
+          // Reset failure counters on success
+          await this.webhookRepository.update(webhook.id, {
+            consecutiveFailures: 0,
+            hasFailedDeliveries: false,
+            lastFailedAt: null,
+          });
         } else {
           this.logger.error(
             `Webhook delivery failed (attempt ${attemptCount}/${maxRetries}): ` +
@@ -96,8 +140,18 @@ export class WebhookDeliveryProvider {
           );
         }
       } catch (err: unknown) {
+        const durationMs = Date.now() - startTime;
         const msg = err instanceof Error ? err.message : String(err);
         lastResponseBody = msg.substring(0, 2048);
+        
+        // Record failed attempt with error details
+        delivery.attempts.push({
+          attemptNumber: attemptCount,
+          timestamp: new Date(),
+          error: msg,
+          durationMs,
+        });
+
         this.logger.error(
           `Webhook delivery error (attempt ${attemptCount}/${maxRetries}): ` +
             `event=${eventType}, accountId=${accountId}, url=${webhook.url}, error=${msg}`,
@@ -106,26 +160,44 @@ export class WebhookDeliveryProvider {
         clearTimeout(timeoutId);
       }
 
+      // Update delivery record after each attempt
+      delivery.attemptCount = attemptCount;
+      delivery.lastResponseCode = lastResponseCode;
+      delivery.lastResponseBody = lastResponseBody;
+      if (success) {
+        delivery.deliveredAt = new Date();
+      }
+      await this.deliveryRepository.save(delivery);
+
       if (!success && attemptCount < maxRetries) {
-        const backoffMs = Math.min(100 * Math.pow(2, attemptCount - 1), 1000);
+        // Get the appropriate backoff interval for this attempt, fall back to last interval if we exceed the array length
+        const backoffIndex = Math.min(attemptCount - 1, this.defaultBackoffIntervalsMs.length - 1);
+        const backoffMs = this.defaultBackoffIntervalsMs[backoffIndex];
+        this.logger.log(
+          `Waiting ${backoffMs}ms before next retry for webhook ${webhook.id}, event=${eventType}`
+        );
         await new Promise((resolve) => setTimeout(resolve, backoffMs));
       }
     }
 
-    // Record delivery attempt log in DB
-    try {
-      delivery.attemptCount = attemptCount;
-      delivery.lastResponseCode = lastResponseCode;
-      delivery.lastResponseBody = lastResponseBody;
-      delivery.deliveredAt = success ? new Date() : null;
-      await this.deliveryRepository.save(delivery);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+    // If all retries failed, update the subscription's failure status
+    if (!success) {
+      const newConsecutiveFailures = webhook.consecutiveFailures + 1;
+      const shouldFlag = newConsecutiveFailures >= this.consecutiveFailureThreshold;
+      
       this.logger.warn(
-        `Failed to record webhook delivery log for ${webhook.id}: ${msg}`,
+        `All webhook delivery attempts failed for ${webhook.id}, event=${eventType}. ` +
+        `Consecutive failures: ${newConsecutiveFailures}. Flagged: ${shouldFlag}`
       );
+
+      await this.webhookRepository.update(webhook.id, {
+        consecutiveFailures: newConsecutiveFailures,
+        hasFailedDeliveries: shouldFlag,
+        lastFailedAt: new Date(),
+      });
     }
 
+    // Always update lastTriggeredAt
     try {
       await this.webhookRepository.update(webhook.id, {
         lastTriggeredAt: new Date(),

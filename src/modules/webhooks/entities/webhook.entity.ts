@@ -31,6 +31,16 @@ export class Webhook {
   @Column({ type: 'timestamp', nullable: true })
   lastTriggeredAt: Date | null;
 
+  @Column({ type: 'boolean', default: false })
+  @Index('IDX_webhooks_has_failed_deliveries')
+  hasFailedDeliveries: boolean;
+
+  @Column({ type: 'integer', default: 0 })
+  consecutiveFailures: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastFailedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
