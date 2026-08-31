@@ -1,0 +1,25 @@
+config:
+  target: 'http://localhost:3000'
+  phases:
+    - duration: 5
+      arrivalRate: 20
+  defaults:
+    headers:
+      Content-Type: 'application/json'
+      X-API-Key: 'REPLACE_WITH_VALID_API_KEY'
+scenarios:
+  - name: Burst webhook subscription creation and deletion
+    flow:
+      - post:
+          url: '/webhooks'
+          json:
+            url: 'https://webhook.site/test-endpoint'
+            events:
+              - 'account.created'
+              - 'sweep.completed'
+          capture:
+            - json: '$.id'
+              as: subscriptionId
+      - think: 0.1
+      - delete:
+          url: '/webhooks/{{ subscriptionId }}'

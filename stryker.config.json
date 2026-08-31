@@ -1,0 +1,38 @@
+{
+  "$schema": "https://stryker-mutator.io/schemas/stryker-config.schema.json",
+  "testRunner": "jest",
+  "jest": {
+    "projectType": "custom",
+    "config": {
+      "rootDir": "src",
+      "testRegex": ".*\\.spec\\.ts$",
+      "transform": {
+        "^.+\\.(t|j)s$": [
+          "ts-jest",
+          {
+            "tsconfig": {
+              "module": "CommonJS",
+              "moduleResolution": "node16",
+              "resolvePackageJsonExports": false
+            }
+          }
+        ]
+      },
+      "moduleNameMapper": { "^(\\.{1,2}/.*)\\.js$": "$1" }
+    }
+  },
+  "mutate": [
+    "src/modules/accounts/**/*.ts",
+    "src/modules/claims/**/*.ts",
+    "src/modules/sweeps/**/*.ts",
+    "!src/**/*.spec.ts",
+    "!src/**/*.module.ts",
+    "!src/**/*.entity.ts",
+    "!src/**/*.dto.ts"
+  ],
+  "reporters": ["html", "clear-text", "progress"],
+  "htmlReporter": { "fileName": "coverage/mutation/index.html" },
+  "thresholds": { "high": 80, "low": 60, "break": null },
+  "timeoutMS": 60000,
+  "coverageAnalysis": "perTest"
+}

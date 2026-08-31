@@ -278,3 +278,15 @@ To skip the hook in an emergency:
 ```bash
 git commit --no-verify -m "your message"
 ```
+
+### Keeping the migration integration test current
+
+Whenever you add a new migration, you **must** also update `src/database/migrations.integration.spec.ts` to cover the new table, column, or index.
+
+Checklist for every new migration PR:
+
+- [ ] New migration file added to `scripts/generate-migrations.sh` (see above)
+- [ ] `src/database/migrations.integration.spec.ts` updated to assert the new schema element exists
+- [ ] `README.md` migration list updated
+
+CI does **not** currently hard-block on a missing test update, but reviewers will request changes if this step is skipped.
