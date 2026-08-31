@@ -48,5 +48,17 @@ export default registerAs('stellar', () => {
     maxFeeCeiling: parseInt(process.env.STELLAR_MAX_FEE_CEILING || '1000000', 10), // 10 XLM in stroops
     feeCacheTtlMs: parseInt(process.env.STELLAR_FEE_CACHE_TTL_MS || '60000', 10), // 60 seconds
     feeMultiplier: parseFloat(process.env.STELLAR_FEE_MULTIPLIER || '1.0'),
+    fundingAccountBalanceCheckIntervalMs: parseInt(
+      process.env.FUNDING_ACCOUNT_BALANCE_CHECK_INTERVAL_MS || '300000',
+      10,
+    ),
+    fundingAccountLowBalanceThreshold: parseInt(
+      process.env.FUNDING_ACCOUNT_LOW_BALANCE_THRESHOLD || '5000000',
+      10,
+    ),
+    fundingAccountCriticalBalanceThreshold: parseInt(
+      process.env.FUNDING_ACCOUNT_CRITICAL_BALANCE_THRESHOLD || '1000000',
+      10,
+    ),
   };
 });
